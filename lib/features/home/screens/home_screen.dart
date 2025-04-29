@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../pet/providers/pet_provider.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -53,25 +54,40 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 40),
-              Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+              Expanded(
+                child: GridView.count(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
                   children: [
-                    const Text('Register a pet to get started.'),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).pushNamed('/register_pet');
+                    _buildFeatureCard(
+                      context,
+                      'My Pets',
+                      Icons.pets,
+                      () => Navigator.of(context).pushNamed('/pets'),
+                    ),
+                    _buildFeatureCard(
+                      context,
+                      'Register New Pet',
+                      Icons.add_circle_outline,
+                      () => Navigator.of(context).pushNamed('/register_pet'),
+                    ),
+                    _buildFeatureCard(
+                      context,
+                      'Feeding History',
+                      Icons.history,
+                      () {
+                        // Not implemented yet
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Coming soon!')),
+                        );
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 32,
-                          vertical: 16,
-                        ),
-                      ),
-                      child: const Text('Register a pet'),
+                    ),
+                    _buildFeatureCard(
+                      context,
+                      'Settings',
+                      Icons.settings,
+                      () => Navigator.of(context).pushNamed('/settings'),
                     ),
                   ],
                 ),
@@ -85,14 +101,17 @@ class HomeScreen extends StatelessWidget {
         onTap: (index) {
           switch (index) {
             case 0:
-              // Already on history/home
+              // Already on home
               break;
             case 1:
               // Navigate to pets page
-              Navigator.of(context).pushNamed('/register_pet');
+              Navigator.of(context).pushNamed('/pets');
               break;
             case 2:
-              // Navigate to schedule page (not implemented yet)
+              // Navigate to feeding history (not implemented yet)
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Coming soon!')),
+              );
               break;
             case 3:
               // Navigate to profile/settings
@@ -102,22 +121,62 @@ class HomeScreen extends StatelessWidget {
         },
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.history),
-            label: 'History',
+            icon: Icon(Icons.home),
+            label: 'Home',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.pets),
-            label: 'Pet',
+            label: 'Pets',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.schedule),
-            label: 'Schedule',
+            icon: Icon(Icons.history),
+            label: 'History',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),
             label: 'Profile',
           ),
         ],
+      ),
+    );
+  }
+  
+  Widget _buildFeatureCard(
+    BuildContext context,
+    String title,
+    IconData icon,
+    VoidCallback onTap,
+  ) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 48,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
