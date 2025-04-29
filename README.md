@@ -1,66 +1,89 @@
 # Pet Feeder App
 
-A Flutter mobile application for managing automated pet feeders. This app allows users to:
+A Flutter application to control and schedule feedings for your pet feeder device.
 
-- Register and manage their pets
-- Connect to pet feeder devices via Bluetooth
-- Set up feeding schedules
-- Monitor food levels
-- Manually trigger feeding
-- Receive notifications for low food levels and feeding times
-
-## Features
-
-- User Authentication
-- Pet Registration
-- Device Pairing (QR Code & Manual Key)
-- Feeding Schedule Management
-- Real-time Food Level Monitoring
-- Manual Feeding Control
-- Push Notifications
-- Feeding History
-
-## Getting Started
+## Setup
 
 ### Prerequisites
 
-- Flutter SDK (3.7.0 or higher)
-- Android Studio / Xcode
-- A compatible pet feeder device
+- Flutter SDK (3.7.2 or higher)
+- Dart SDK (3.0.0 or higher)
+- A Supabase account (optional but recommended)
 
 ### Installation
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/pet_feeder.git
+1. Clone this repository
+2. Install dependencies:
 ```
-
-2. Navigate to the project directory:
-```bash
-cd pet_feeder
-```
-
-3. Install dependencies:
-```bash
 flutter pub get
 ```
 
-4. Run the app:
-```bash
+### Supabase Configuration
+
+The app uses Supabase as its backend database. You can run the app without setting up Supabase (it will work in offline mode), but for the full experience, follow these steps:
+
+1. Create a new project on [Supabase](https://supabase.com/)
+2. Navigate to Settings > API in your Supabase dashboard
+3. Copy your Supabase URL and anon/public key
+4. Create a `.env` file in the root directory of your project with the following content:
+```
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+5. Run the SQL script found in `supabase_setup.sql` in your Supabase SQL editor to set up the necessary tables and schema
+
+For more detailed instructions, see the [Supabase Setup Guide](SUPABASE_SETUP.md).
+
+## Features
+
+- User authentication
+- Pet registration and management
+- Device connection and control
+- Feeding schedule management
+- Feeding history tracking
+
+## Development Notes
+
+### Offline Mode
+
+The app will automatically switch to offline mode if it cannot connect to Supabase. In offline mode, you can still:
+
+- Register and log in with dummy credentials (data is stored locally)
+- Navigate the app and view the UI
+- Test basic functionality
+
+However, data will not be synchronized with the server in offline mode.
+
+## Running the App
+
+```
 flutter run
 ```
 
-### Device Setup
+## Building for Production
 
-1. Power on your pet feeder device
-2. Enable Bluetooth on your mobile device
-3. Open the app and register an account
-4. Add a new pet and scan the QR code on your device (or enter the manual key)
-5. Follow the on-screen instructions to complete the setup
+### Android
 
-## Contributing
+```
+flutter build apk --release
+```
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+### iOS
+
+```
+flutter build ios --release
+```
+
+## Troubleshooting
+
+### Database Connection Issues
+
+If you encounter database connection issues:
+
+1. Verify your internet connection
+2. Check that your `.env` file exists and contains the correct credentials
+3. Ensure your Supabase project is active and running
+4. Use the retry button on the error screen to attempt reconnection
 
 ## License
 

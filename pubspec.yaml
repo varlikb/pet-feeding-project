@@ -54,6 +54,13 @@ dependencies:
   
   # Bluetooth connectivity
   flutter_blue_plus: ^1.31.16
+  
+  # Network connectivity
+  connectivity_plus: ^5.0.2
+  
+  # Supabase
+  supabase_flutter: ^2.3.4
+  flutter_dotenv: ^5.1.0
 
 dev_dependencies:
   flutter_test:
@@ -81,6 +88,7 @@ flutter:
     - assets/images/login_cat.png
     - assets/icons/google.png
     - assets/images/pet_placeholder.png
+    - .env
 
   # To add assets to your application, add an assets section, like this:
   # assets:
