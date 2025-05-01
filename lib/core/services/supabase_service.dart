@@ -233,7 +233,22 @@ class SupabaseService {
       return; // Just return in offline mode
     }
     
+    try {
+      // First, delete all related feeding schedules
+      await client.from('feeding_schedules').delete().eq('pet_id', id);
+      
+      // Delete all feeding records
+      await client.from('feeding_records').delete().eq('pet_id', id);
+      
+      // Delete all pet-device assignments
+      await client.from('pet_device_assignments').delete().eq('pet_id', id);
+      
+      // Finally, delete the pet
     await client.from('pets').delete().eq('id', id);
+    } catch (e) {
+      debugPrint('Error deleting pet: $e');
+      throw Exception('Failed to delete pet: $e');
+    }
   }
 
   // Feeding records
@@ -529,6 +544,60 @@ class SupabaseService {
     } catch (e) {
       debugPrint('Error getting device: $e');
       return null;
+    }
+  }
+
+  // Profile operations
+  static Future<Map<String, dynamic>> getProfile() async {
+    if (_forceOfflineMode) {
+      return {}; // Return empty map in offline mode
+    }
+    
+    final userId = getCurrentUser()?.id;
+    if (userId == null) return {};
+    
+    try {
+      final response = await client
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+      return response;
+    } catch (e) {
+      debugPrint('Error getting profile: $e');
+      return {};
+    }
+  }
+
+  static Future<void> updateProfile(Map<String, dynamic> profileData) async {
+    if (_forceOfflineMode) {
+      return; // Just return in offline mode
+    }
+    
+    final userId = getCurrentUser()?.id;
+    if (userId == null) return;
+    
+    try {
+      // Update the profile
+      await client
+          .from('profiles')
+          .update({
+            ...profileData,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', userId);
+      
+      // If name is being updated, also update auth metadata
+      if (profileData.containsKey('name')) {
+        await client.auth.updateUser(
+          UserAttributes(
+            data: {'name': profileData['name']},
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error updating profile: $e');
+      throw Exception('Failed to update profile: $e');
     }
   }
 } 

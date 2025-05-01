@@ -14,6 +14,10 @@ import 'features/pet/screens/pets_list_screen.dart';
 import 'package:pet_feeder/core/services/supabase_service.dart';
 import 'package:pet_feeder/core/screens/loading_screen.dart';
 import 'core/services/feeding_scheduler_service.dart';
+import 'features/settings/screens/edit_profile_screen.dart';
+import 'features/admin/screens/admin_dashboard_screen.dart';
+import 'features/device/screens/pair_device_screen.dart';
+import 'features/device/screens/manage_devices_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -176,38 +180,72 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => PetProvider()),
         ChangeNotifierProvider(create: (_) => DeviceProvider()),
       ],
-      child: Consumer<AuthProvider>(
-        builder: (context, authProvider, _) {
-          // Check login status when app starts
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            authProvider.checkLoginStatus();
-          });
-          
-          return MaterialApp(
-            title: 'Pet Feeder',
-            debugShowCheckedModeBanner: false,
-            theme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: const Color(0xFFFFA07A),
-                primary: const Color(0xFFFFA07A),
-                secondary: const Color(0xFF87CEEB),
-              ),
-              textTheme: GoogleFonts.poppinsTextTheme(),
-              useMaterial3: true,
+      child: MaterialApp(
+        title: 'Pet Feeder',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFFFFA07A),
+            primary: const Color(0xFFFFA07A),
+            secondary: const Color(0xFF87CEEB),
+          ),
+          textTheme: GoogleFonts.poppinsTextTheme(),
+          useMaterial3: true,
+        ),
+        home: const AppStartScreen(),
+        routes: {
+          '/login': (context) => const LoginScreen(),
+          '/register': (context) => const RegisterScreen(),
+          '/forgot-password': (context) => const ForgotPasswordScreen(),
+          '/home': (context) => const HomeScreen(),
+          '/settings': (context) => const SettingsScreen(),
+          '/edit-profile': (context) => const EditProfileScreen(),
+          '/register-pet': (context) => const RegisterPetScreen(),
+          '/pets': (context) => const PetsListScreen(),
+          '/admin-dashboard': (context) => const AdminDashboardScreen(),
+          '/pair-device': (context) => const PairDeviceScreen(),
+          '/devices': (context) => const ManageDevicesScreen(),
+        },
+      ),
+    );
+  }
+}
+
+class AppStartScreen extends StatefulWidget {
+  const AppStartScreen({super.key});
+
+  @override
+  State<AppStartScreen> createState() => _AppStartScreenState();
+}
+
+class _AppStartScreenState extends State<AppStartScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Check login status after the first frame is rendered
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<AuthProvider>(context, listen: false).checkLoginStatus();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AuthProvider>(
+      builder: (context, auth, _) {
+        if (auth.isCheckingAdmin) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
             ),
-            initialRoute: authProvider.isAuthenticated ? '/' : '/login',
-            routes: {
-              '/': (context) => const HomeScreen(),
-              '/login': (context) => const LoginScreen(),
-              '/register': (context) => const RegisterScreen(),
-              '/forgot_password': (context) => const ForgotPasswordScreen(),
-              '/settings': (context) => const SettingsScreen(),
-              '/register_pet': (context) => const RegisterPetScreen(),
-              '/pets': (context) => const PetsListScreen(),
-            },
           );
         }
-      ),
+        
+        if (auth.isAuthenticated) {
+          return const HomeScreen();
+        }
+        
+        return const LoginScreen();
+      },
     );
   }
 }

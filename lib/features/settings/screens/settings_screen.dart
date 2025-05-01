@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../features/auth/providers/auth_provider.dart';
+import 'edit_profile_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -27,9 +28,25 @@ class SettingsScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'User Information',
-                      style: Theme.of(context).textTheme.titleLarge,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'User Information',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const EditProfileScreen(),
+                              ),
+                            );
+                          },
+                          tooltip: 'Edit Profile',
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     ListTile(
@@ -70,6 +87,35 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
             ),
+            
+            const SizedBox(height: 16),
+            
+            // Admin section (only shown for admin users)
+            if (authProvider.isAdmin)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Administration',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      ListTile(
+                        leading: const Icon(Icons.admin_panel_settings),
+                        title: const Text('Admin Dashboard'),
+                        subtitle: Text('Role: ${authProvider.adminRole.toString().split('.').last}'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).pushNamed('/admin');
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             
             const SizedBox(height: 16),
             

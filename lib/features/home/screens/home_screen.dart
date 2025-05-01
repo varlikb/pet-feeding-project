@@ -64,6 +64,12 @@ class HomeScreen extends StatelessWidget {
                     ),
                     _buildFeatureCard(
                       context,
+                      'My Devices',
+                      Icons.devices,
+                      () => Navigator.of(context).pushNamed('/devices'),
+                    ),
+                    _buildFeatureCard(
+                      context,
                       'Register New Pet',
                       Icons.add_circle_outline,
                       () => Navigator.of(context).pushNamed('/register_pet'),
