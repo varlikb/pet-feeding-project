@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../pet/providers/pet_provider.dart';
+import '../../feeding/screens/feeding_history_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -10,6 +11,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final userName = authProvider.userName;
+    final petProvider = context.watch<PetProvider>();
 
     return Scaffold(
       body: SafeArea(
@@ -36,12 +38,6 @@ class HomeScreen extends StatelessWidget {
                         },
                         icon: const Icon(Icons.logout),
                         tooltip: 'Logout',
-                      ),
-                      IconButton(
-                        onPressed: () {
-                          Navigator.of(context).pushNamed('/settings');
-                        },
-                        icon: const Icon(Icons.settings),
                       ),
                     ],
                   ),
@@ -77,10 +73,20 @@ class HomeScreen extends StatelessWidget {
                       'Feeding History',
                       Icons.history,
                       () {
-                        // Not implemented yet
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Coming soon!')),
-                        );
+                        final currentPet = petProvider.currentPet;
+                        if (currentPet != null) {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => FeedingHistoryScreen(
+                                petId: currentPet.id,
+                              ),
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please select a pet first')),
+                          );
+                        }
                       },
                     ),
                     _buildFeatureCard(
@@ -108,10 +114,21 @@ class HomeScreen extends StatelessWidget {
               Navigator.of(context).pushNamed('/pets');
               break;
             case 2:
-              // Navigate to feeding history (not implemented yet)
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Coming soon!')),
-              );
+              // Navigate to feeding history
+              final currentPet = petProvider.currentPet;
+              if (currentPet != null) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => FeedingHistoryScreen(
+                      petId: currentPet.id,
+                    ),
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please select a pet first')),
+                );
+              }
               break;
             case 3:
               // Navigate to profile/settings
