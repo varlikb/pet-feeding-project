@@ -1,89 +1,83 @@
 # Pet Feeder App
 
-A Flutter application to control and schedule feedings for your pet feeder device.
+A Flutter application for managing pet feeding schedules and devices.
 
-## Setup
+## Security Setup
 
-### Prerequisites
+Before running the application, you need to set up your environment securely:
 
-- Flutter SDK (3.7.2 or higher)
-- Dart SDK (3.0.0 or higher)
-- A Supabase account (optional but recommended)
+1. Create a `.env` file in the root directory:
+   ```
+   SUPABASE_URL=your_supabase_project_url
+   SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
 
-### Installation
+2. **IMPORTANT: Never commit your `.env` file to version control!**
+   - The `.gitignore` file is configured to exclude sensitive files
+   - Always use environment variables for secrets
+   - Never hardcode API keys or credentials
 
-1. Clone this repository
-2. Install dependencies:
-```
-flutter pub get
-```
+## Environment Setup
 
-### Supabase Configuration
+1. Copy `.env.example` to `.env`:
+   ```bash
+   cp .env.example .env
+   ```
 
-The app uses Supabase as its backend database. You can run the app without setting up Supabase (it will work in offline mode), but for the full experience, follow these steps:
+2. Get your Supabase credentials:
+   - Go to your Supabase project dashboard
+   - Navigate to Project Settings > API
+   - Copy the URL and anon/public key
+   - Paste them into your `.env` file
 
-1. Create a new project on [Supabase](https://supabase.com/)
-2. Navigate to Settings > API in your Supabase dashboard
-3. Copy your Supabase URL and anon/public key
-4. Create a `.env` file in the root directory of your project with the following content:
-```
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
-```
-5. Run the SQL script found in `supabase_setup.sql` in your Supabase SQL editor to set up the necessary tables and schema
+## Security Best Practices
 
-For more detailed instructions, see the [Supabase Setup Guide](SUPABASE_SETUP.md).
+1. **Environment Variables**
+   - All sensitive data should be stored in `.env`
+   - Never commit real credentials to Git
+   - Use different credentials for development and production
 
-## Features
+2. **API Keys**
+   - Use separate API keys for development and production
+   - Regularly rotate production keys
+   - Set appropriate permissions in Supabase
 
-- User authentication
-- Pet registration and management
-- Device connection and control
-- Feeding schedule management
-- Feeding history tracking
+3. **Authentication**
+   - Email verification is enabled by default
+   - Password requirements are enforced
+   - Rate limiting is implemented for login attempts
 
-## Development Notes
+## Development Setup
 
-### Offline Mode
+1. Install dependencies:
+   ```bash
+   flutter pub get
+   ```
 
-The app will automatically switch to offline mode if it cannot connect to Supabase. In offline mode, you can still:
+2. Verify environment setup:
+   ```bash
+   flutter run
+   ```
 
-- Register and log in with dummy credentials (data is stored locally)
-- Navigate the app and view the UI
-- Test basic functionality
+## Production Deployment
 
-However, data will not be synchronized with the server in offline mode.
+Before deploying to production:
 
-## Running the App
+1. Review security settings in Supabase dashboard
+2. Enable email verification
+3. Set up proper authentication rules
+4. Configure row-level security (RLS) policies
+5. Use production API keys
+6. Enable SSL/TLS
+7. Set up proper CORS policies
 
-```
-flutter run
-```
+## Contributing
 
-## Building for Production
-
-### Android
-
-```
-flutter build apk --release
-```
-
-### iOS
-
-```
-flutter build ios --release
-```
-
-## Troubleshooting
-
-### Database Connection Issues
-
-If you encounter database connection issues:
-
-1. Verify your internet connection
-2. Check that your `.env` file exists and contains the correct credentials
-3. Ensure your Supabase project is active and running
-4. Use the retry button on the error screen to attempt reconnection
+1. Never commit sensitive data
+2. Use environment variables for configuration
+3. Follow security best practices
+4. Review code for security issues
+5. Keep dependencies updated
 
 ## License
 
