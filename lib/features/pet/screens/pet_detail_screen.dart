@@ -15,11 +15,14 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
   bool _isLoading = false;
   double _feedAmount = 50.0; // Default feed amount in grams
   double _foodLevel = 100.0; // Default food level percentage
+  bool _isFemale = true; // Default gender
+  String _deviceKey = ''; // Add this line
 
   @override
   void initState() {
     super.initState();
     _loadFoodLevel();
+    _loadDeviceKey(); // Add this line
   }
 
   Future<void> _loadFoodLevel() async {
@@ -28,6 +31,16 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
     setState(() {
       _foodLevel = foodLevel;
     });
+  }
+
+  Future<void> _loadDeviceKey() async {
+    final petProvider = Provider.of<PetProvider>(context, listen: false);
+    final deviceKey = await petProvider.getDeviceKey();
+    if (mounted) {
+      setState(() {
+        _deviceKey = deviceKey ?? 'Not available';
+      });
+    }
   }
 
   @override
@@ -144,7 +157,7 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
                           _buildInfoRow('Age', '${pet.age} years'),
                           _buildInfoRow('Weight', '${pet.weight} kg'),
                           _buildInfoRow('Gender', pet.isFemale ? 'Female' : 'Male'),
-                          _buildInfoRow('Device Key', pet.deviceKey),
+                          _buildInfoRow('Device Key', _deviceKey),
                         ],
                       ),
                     ),
@@ -169,6 +182,7 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
                           const SizedBox(height: 16),
                           // Food Level Indicator
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Icon(Icons.food_bank),
                               const SizedBox(width: 8),
@@ -181,13 +195,19 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w500,
                                       ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                     const SizedBox(height: 4),
-                                    LinearProgressIndicator(
-                                      value: (_foodLevel / 1000.0).clamp(0.0, 1.0), // Assuming 1kg max capacity
-                                      backgroundColor: Colors.grey[200],
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        _foodLevel > 200 ? Colors.green : Colors.red, // Warning when less than 200g
+                                    LayoutBuilder(
+                                      builder: (context, constraints) => SizedBox(
+                                        width: constraints.maxWidth,
+                                        child: LinearProgressIndicator(
+                                          value: (_foodLevel / 1000.0).clamp(0.0, 1.0),
+                                          backgroundColor: Colors.grey[200],
+                                          valueColor: AlwaysStoppedAnimation<Color>(
+                                            _foodLevel > 200 ? Colors.green : Colors.red,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                     if (_foodLevel <= 200)
@@ -200,6 +220,7 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
                                             fontSize: 12,
                                             fontWeight: FontWeight.w500,
                                           ),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                   ],
@@ -269,7 +290,6 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             label,
@@ -278,10 +298,15 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
               color: Colors.grey,
             ),
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.end,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:pet_feeder/core/services/supabase_service.dart';
+import 'package:pet_feeder/core/services/device_service.dart';
 
 class Pet {
   final String id;
@@ -9,7 +10,7 @@ class Pet {
   final double weight;
   final int age;
   final bool isFemale;
-  final String deviceKey;
+  final String deviceId;
   final String userId;
   
   Pet({
@@ -18,7 +19,7 @@ class Pet {
     required this.weight,
     required this.age,
     required this.isFemale,
-    required this.deviceKey,
+    required this.deviceId,
     required this.userId,
   });
   
@@ -29,7 +30,7 @@ class Pet {
       weight: (json['weight'] as num).toDouble(),
       age: json['age'] as int,
       isFemale: json['is_female'] as bool,
-      deviceKey: json['device_key'] as String,
+      deviceId: json['device_id'] as String,
       userId: json['user_id'] as String,
     );
   }
@@ -41,7 +42,7 @@ class Pet {
       'weight': weight,
       'age': age,
       'is_female': isFemale,
-      'device_key': deviceKey,
+      'device_id': deviceId,
       'user_id': userId,
     };
   }
@@ -88,7 +89,7 @@ class PetProvider extends ChangeNotifier {
     required double weight,
     required int age,
     required bool isFemale,
-    required String deviceKey,
+    required String deviceId,
   }) async {
     try {
       final user = SupabaseService.getCurrentUser();
@@ -96,22 +97,16 @@ class PetProvider extends ChangeNotifier {
         throw Exception('User not authenticated');
       }
 
-      // First, check if a device with this key already exists
-      final existingDevice = await SupabaseService.findDeviceByKey(deviceKey);
-      String deviceId;
-
-      if (existingDevice != null) {
-        // Use existing device
-        deviceId = existingDevice['id'];
-      } else {
-        // Create new device
-        final newDevice = await SupabaseService.addDevice({
-          'name': 'Pet Feeder for $name',
-          'device_key': deviceKey,
-          'user_id': user.id,
-          'food_level': 100.0,
-        });
-        deviceId = newDevice['id'];
+      // Get the device to verify it exists and is paired with the user
+      final device = await DeviceService.getDeviceById(deviceId);
+      if (device == null) {
+        throw Exception('Device not found');
+      }
+      if (device['owner_id'] != user.id) {
+        throw Exception('Device does not belong to you');
+      }
+      if (!device['is_paired']) {
+        throw Exception('Device is not paired');
       }
       
       // Register the pet
@@ -120,7 +115,7 @@ class PetProvider extends ChangeNotifier {
         'weight': weight,
         'age': age,
         'is_female': isFemale,
-        'device_key': deviceKey,
+        'device_id': deviceId,
         'user_id': user.id,
       };
       
@@ -151,7 +146,7 @@ class PetProvider extends ChangeNotifier {
     required double weight,
     required int age,
     required bool isFemale,
-    String? deviceKey,
+    String? deviceId,
   }) async {
     try {
       if (_currentPet == null) {
@@ -164,7 +159,7 @@ class PetProvider extends ChangeNotifier {
         weight: weight,
         age: age,
         isFemale: isFemale,
-        deviceKey: deviceKey ?? _currentPet!.deviceKey,
+        deviceId: deviceId ?? _currentPet!.deviceId,
         userId: _currentPet!.userId,
       );
       
@@ -284,6 +279,29 @@ class PetProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error getting device food level: $e');
       return 0.0;
+    }
+  }
+
+  Future<String?> getDeviceKey() async {
+    if (_currentPet == null) {
+      return null;
+    }
+
+    try {
+      final deviceAssignment = await SupabaseService.getPrimaryDeviceForPet(_currentPet!.id);
+      if (deviceAssignment == null) {
+        return null;
+      }
+
+      final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_id']);
+      if (deviceDetails == null) {
+        return null;
+      }
+
+      return deviceDetails['device_key'] as String;
+    } catch (e) {
+      debugPrint('Error getting device key: $e');
+      return null;
     }
   }
 

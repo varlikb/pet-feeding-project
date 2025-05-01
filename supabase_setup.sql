@@ -27,21 +27,38 @@ create policy "Users can update their own profile" on public.profiles
 create table public.devices (
   id uuid default uuid_generate_v4() primary key,
   name text not null,
-  device_key text not null,
-  user_id uuid references auth.users not null,
+  device_key text not null unique,
+  user_id uuid references auth.users not null, -- Admin who created the device
   food_level double precision default 1000.0 not null, -- in grams, default 1kg
   last_feeding timestamp with time zone,
+  is_paired boolean default false not null,
+  owner_id uuid references auth.users unique, -- Only one user can own a device
+  last_paired_at timestamp with time zone,
   created_at timestamp with time zone default now() not null,
   updated_at timestamp with time zone default now() not null,
-  CONSTRAINT positive_food_level CHECK (food_level >= 0)
+  CONSTRAINT positive_food_level CHECK (food_level >= 0),
+  CONSTRAINT one_device_per_owner UNIQUE (owner_id) -- Ensures one device per user
 );
 
 -- Enable RLS on devices
 alter table public.devices enable row level security;
 
--- Create policy to allow users to CRUD only their own devices
-create policy "Users can manage their own devices" on public.devices
-  for all using (auth.uid() = user_id);
+-- Create policy to allow admins to manage all devices
+create policy "Admins can manage all devices" on public.devices
+  for all using (
+    exists (
+      select 1 from admin_users
+      where admin_users.user_id = auth.uid()
+    )
+  );
+
+-- Create policy to allow users to view and pair with available devices
+create policy "Users can view and pair with available devices" on public.devices
+  for select using (true);
+
+-- Create policy to allow users to update devices they own
+create policy "Users can update their owned devices" on public.devices
+  for update using (owner_id = auth.uid());
 
 -- Create pets table
 create table public.pets (

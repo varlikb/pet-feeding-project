@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pet_provider.dart';
+import '../../../core/services/device_service.dart';
 
 class EditPetScreen extends StatefulWidget {
   final Pet pet;
@@ -16,9 +17,10 @@ class _EditPetScreenState extends State<EditPetScreen> {
   late TextEditingController _nameController;
   late TextEditingController _weightController;
   late TextEditingController _ageController;
-  late TextEditingController _deviceKeyController;
   late bool _isFemale;
   bool _isLoading = false;
+  List<Map<String, dynamic>> _userDevices = [];
+  String? _selectedDeviceId;
 
   @override
   void initState() {
@@ -27,8 +29,9 @@ class _EditPetScreenState extends State<EditPetScreen> {
     _nameController = TextEditingController(text: widget.pet.name);
     _weightController = TextEditingController(text: widget.pet.weight.toString());
     _ageController = TextEditingController(text: widget.pet.age.toString());
-    _deviceKeyController = TextEditingController(text: widget.pet.deviceKey);
     _isFemale = widget.pet.isFemale;
+    _selectedDeviceId = widget.pet.deviceId;
+    _loadUserDevices();
   }
 
   @override
@@ -36,8 +39,34 @@ class _EditPetScreenState extends State<EditPetScreen> {
     _nameController.dispose();
     _weightController.dispose();
     _ageController.dispose();
-    _deviceKeyController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadUserDevices() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      final devices = await DeviceService.getUserDevices();
+      
+      setState(() {
+        _userDevices = devices;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading devices: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _updatePet() async {
@@ -56,7 +85,7 @@ class _EditPetScreenState extends State<EditPetScreen> {
         weight: double.parse(_weightController.text),
         age: int.parse(_ageController.text),
         isFemale: _isFemale,
-        deviceKey: _deviceKeyController.text,
+        deviceId: _selectedDeviceId,
       );
       
       if (context.mounted) {
@@ -86,11 +115,12 @@ class _EditPetScreenState extends State<EditPetScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
+          : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Form(
                 key: _formKey,
-                child: ListView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     TextFormField(
                       controller: _nameController,
@@ -100,7 +130,7 @@ class _EditPetScreenState extends State<EditPetScreen> {
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Please enter a name';
+                          return 'Please enter name';
                         }
                         return null;
                       },
@@ -117,12 +147,7 @@ class _EditPetScreenState extends State<EditPetScreen> {
                         if (value == null || value.isEmpty) {
                           return 'Please enter weight';
                         }
-                        try {
-                          final weight = double.parse(value);
-                          if (weight <= 0) {
-                            return 'Weight must be greater than 0';
-                          }
-                        } catch (e) {
+                        if (double.tryParse(value) == null) {
                           return 'Please enter a valid number';
                         }
                         return null;
@@ -132,7 +157,7 @@ class _EditPetScreenState extends State<EditPetScreen> {
                     TextFormField(
                       controller: _ageController,
                       decoration: const InputDecoration(
-                        labelText: 'Age (years)',
+                        labelText: 'Age (months)',
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.number,
@@ -140,28 +165,8 @@ class _EditPetScreenState extends State<EditPetScreen> {
                         if (value == null || value.isEmpty) {
                           return 'Please enter age';
                         }
-                        try {
-                          final age = int.parse(value);
-                          if (age < 0) {
-                            return 'Age cannot be negative';
-                          }
-                        } catch (e) {
+                        if (int.tryParse(value) == null) {
                           return 'Please enter a valid number';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _deviceKeyController,
-                      decoration: const InputDecoration(
-                        labelText: 'Device Key',
-                        border: OutlineInputBorder(),
-                        helperText: 'Unique identifier for the pet feeder device',
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter device key';
                         }
                         return null;
                       },
@@ -169,34 +174,105 @@ class _EditPetScreenState extends State<EditPetScreen> {
                     const SizedBox(height: 16),
                     Card(
                       child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Row(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Gender: '),
-                            Radio<bool>(
-                              value: true,
-                              groupValue: _isFemale,
-                              onChanged: (bool? value) {
-                                if (value != null) {
-                                  setState(() {
-                                    _isFemale = value;
-                                  });
-                                }
-                              },
+                            const Text(
+                              'Gender',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                            const Text('Female'),
-                            Radio<bool>(
-                              value: false,
-                              groupValue: _isFemale,
-                              onChanged: (bool? value) {
-                                if (value != null) {
-                                  setState(() {
-                                    _isFemale = value;
-                                  });
-                                }
-                              },
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: () => setState(() => _isFemale = false),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: !_isFemale ? Theme.of(context).colorScheme.primary : null,
+                                      foregroundColor: !_isFemale ? Colors.white : null,
+                                    ),
+                                    child: const Text('MALE'),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: () => setState(() => _isFemale = true),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _isFemale ? Theme.of(context).colorScheme.primary : null,
+                                      foregroundColor: _isFemale ? Colors.white : null,
+                                    ),
+                                    child: const Text('FEMALE'),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const Text('Male'),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Paired Device',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            if (_userDevices.isEmpty)
+                              const Text(
+                                'No devices available',
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              )
+                            else
+                              DropdownButtonFormField<String>(
+                                decoration: const InputDecoration(
+                                  labelText: 'Select Device',
+                                  border: OutlineInputBorder(),
+                                ),
+                                value: _selectedDeviceId,
+                                items: _userDevices.map((device) {
+                                  return DropdownMenuItem<String>(
+                                    value: device['id'],
+                                    child: Text('${device['name']} (${device['device_key']})'),
+                                  );
+                                }).toList(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedDeviceId = value;
+                                  });
+                                },
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Please select a device';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: () {
+                                Navigator.pushNamed(context, '/pair-device').then((_) {
+                                  _loadUserDevices();
+                                });
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('Pair New Device'),
+                            ),
                           ],
                         ),
                       ),
@@ -205,9 +281,9 @@ class _EditPetScreenState extends State<EditPetScreen> {
                     ElevatedButton(
                       onPressed: _updatePet,
                       style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
+                        padding: const EdgeInsets.all(16),
                       ),
-                      child: const Text('Update Pet'),
+                      child: const Text('Save Changes'),
                     ),
                   ],
                 ),

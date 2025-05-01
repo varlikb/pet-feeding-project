@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pet_feeder/core/services/supabase_service.dart';
+import '../../admin/services/admin_service.dart';
+import '../../admin/models/admin_role.dart';
 
 class AuthProvider extends ChangeNotifier {
   bool _isAuthenticated = false;
@@ -9,6 +11,8 @@ class AuthProvider extends ChangeNotifier {
   String? _userId;
   String? _lastError;
   bool _isOfflineMode = false;
+  AdminRole? _adminRole;
+  bool _isCheckingAdmin = false;
 
   bool get isAuthenticated => _isAuthenticated;
   String? get userEmail => _userEmail;
@@ -16,6 +20,9 @@ class AuthProvider extends ChangeNotifier {
   String? get userId => _userId;
   String? get lastError => _lastError;
   bool get isOfflineMode => _isOfflineMode;
+  AdminRole? get adminRole => _adminRole;
+  bool get isAdmin => _adminRole != null;
+  bool get isCheckingAdmin => _isCheckingAdmin;
 
   Future<bool> login(String email, String password) async {
     try {
@@ -43,20 +50,38 @@ class AuthProvider extends ChangeNotifier {
         await prefs.setBool('isOfflineMode', false);
         
         notifyListeners();
+        
+        // Check admin status without setting isCheckingAdmin
+        try {
+          _adminRole = await AdminService.getUserRole();
+          notifyListeners();
+        } catch (e) {
+          debugPrint('Error checking admin status: $e');
+          _adminRole = null;
+        }
+        
         return true;
       }
-      _lastError = 'Invalid credentials';
+      _lastError = 'Invalid email or password';
       notifyListeners();
       return false;
     } catch (e) {
-      _lastError = e.toString();
+      String errorMessage = e.toString();
       
-      if (e.toString().contains('not initialized') || 
-          e.toString().contains('network') ||
-          e.toString().contains('connection')) {
-        // Only fall back to offline mode if explicitly allowed
-        debugPrint('Connection issue: $e');
-        return false;
+      // Format error messages to be more user-friendly
+      if (errorMessage.contains('Invalid login credentials')) {
+        _lastError = 'Invalid email or password';
+      } else if (errorMessage.contains('not initialized') || 
+                 errorMessage.contains('network') ||
+                 errorMessage.contains('connection')) {
+        _lastError = 'Unable to connect to the server. Please check your internet connection and try again.';
+      } else if (errorMessage.contains('too many requests')) {
+        _lastError = 'Too many login attempts. Please wait a few minutes and try again.';
+      } else if (errorMessage.contains('email not confirmed')) {
+        _lastError = 'Please verify your email address before logging in.';
+      } else {
+        _lastError = 'An unexpected error occurred. Please try again.';
+        debugPrint('Login error: $errorMessage');
       }
       
       notifyListeners();
@@ -93,30 +118,32 @@ class AuthProvider extends ChangeNotifier {
         notifyListeners();
         return {'success': true};
       }
-      _lastError = 'Registration failed';
+      _lastError = 'Registration failed. Please try again.';
       notifyListeners();
-      return {'success': false, 'error': 'Registration failed'};
+      return {'success': false, 'error': _lastError};
     } catch (e) {
-      _lastError = e.toString();
-      
-      // Format the error message to be more user-friendly
       String errorMessage = e.toString();
       
-      if (errorMessage.contains('not initialized') || 
-          errorMessage.contains('network') ||
-          errorMessage.contains('connection')) {
-        // Network connectivity issue
-        errorMessage = 'No internet connection. Please check your network and try again.';
-      } else if (errorMessage.contains('User already registered')) {
-        errorMessage = 'Email is already registered. Try logging in instead.';
+      // Format error messages to be more user-friendly
+      if (errorMessage.contains('User already registered')) {
+        _lastError = 'This email is already registered. Please try logging in instead.';
       } else if (errorMessage.contains('Password should be at least')) {
-        errorMessage = 'Password is too short. It should be at least 6 characters.';
+        _lastError = 'Password must be at least 6 characters long.';
       } else if (errorMessage.contains('invalid email')) {
-        errorMessage = 'Please enter a valid email address.';
+        _lastError = 'Please enter a valid email address.';
+      } else if (errorMessage.contains('not initialized') || 
+                 errorMessage.contains('network') ||
+                 errorMessage.contains('connection')) {
+        _lastError = 'Unable to connect to the server. Please check your internet connection and try again.';
+      } else if (errorMessage.contains('too many requests')) {
+        _lastError = 'Too many registration attempts. Please wait a few minutes and try again.';
+      } else {
+        _lastError = 'An unexpected error occurred during registration. Please try again.';
+        debugPrint('Registration error: $errorMessage');
       }
       
       notifyListeners();
-      return {'success': false, 'error': errorMessage};
+      return {'success': false, 'error': _lastError};
     }
   }
 
@@ -133,6 +160,7 @@ class AuthProvider extends ChangeNotifier {
       _userName = null;
       _userId = null;
       _isOfflineMode = false;
+      _adminRole = null;
       
       // Clear saved login state
       final prefs = await SharedPreferences.getInstance();
@@ -148,41 +176,77 @@ class AuthProvider extends ChangeNotifier {
   
   // Check if user is already logged in from previous session
   Future<void> checkLoginStatus() async {
+    if (_isCheckingAdmin) return; // Prevent multiple simultaneous checks
+    
+    _isCheckingAdmin = true;
+    notifyListeners();
+
     try {
-      // Try to get session from Supabase first
-      try {
-        final currentUser = SupabaseService.getCurrentUser();
-        if (currentUser != null) {
-          _isAuthenticated = true;
-          _userEmail = currentUser.email;
-          _userName = currentUser.userMetadata?['name'] as String? ?? 
-                      currentUser.email?.split('@')[0] ?? 'User';
-          _userId = currentUser.id;
-          _lastError = null;
-          _isOfflineMode = false;
-          
-          // Update SharedPreferences
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('isAuthenticated', true);
-          await prefs.setString('userEmail', _userEmail ?? '');
-          await prefs.setString('userName', _userName ?? '');
-          await prefs.setString('userId', _userId ?? '');
-          await prefs.setBool('isOfflineMode', false);
-          
-          notifyListeners();
-          return;
-        }
-      } catch (e) {
-        debugPrint('Supabase auth check failed: $e');
-        // If Supabase auth fails, we don't authenticate the user
-        _isAuthenticated = false;
+      final currentUser = SupabaseService.getCurrentUser();
+      if (currentUser != null) {
+        _isAuthenticated = true;
+        _userEmail = currentUser.email;
+        _userName = currentUser.userMetadata?['name'] as String? ?? 
+                    currentUser.email?.split('@')[0] ?? 'User';
+        _userId = currentUser.id;
+        _lastError = null;
+        _isOfflineMode = false;
+        
+        // Update SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('isAuthenticated', true);
+        await prefs.setString('userEmail', _userEmail ?? '');
+        await prefs.setString('userName', _userName ?? '');
+        await prefs.setString('userId', _userId ?? '');
+        await prefs.setBool('isOfflineMode', false);
+        
         notifyListeners();
+        
+        // Check admin status without setting isCheckingAdmin again
+        try {
+          _adminRole = await AdminService.getUserRole();
+          notifyListeners();
+        } catch (e) {
+          debugPrint('Error checking admin status: $e');
+          _adminRole = null;
+        }
+      } else {
+        _isAuthenticated = false;
+        _adminRole = null;
       }
     } catch (e) {
       debugPrint('Error in checkLoginStatus: $e');
       _lastError = e.toString();
       _isAuthenticated = false;
+      _adminRole = null;
+    } finally {
+      _isCheckingAdmin = false;
       notifyListeners();
     }
+  }
+
+  Future<void> checkAdminStatus() async {
+    if (_isCheckingAdmin) return; // Prevent multiple simultaneous checks
+    
+    _isCheckingAdmin = true;
+    notifyListeners();
+
+    try {
+      _adminRole = await AdminService.getUserRole();
+    } catch (e) {
+      debugPrint('Error checking admin status: $e');
+      _adminRole = null;
+    } finally {
+      _isCheckingAdmin = false;
+      notifyListeners();
+    }
+  }
+
+  void updateUserName(String newName) {
+    _userName = newName;
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('userName', newName);
+    });
+    notifyListeners();
   }
 } 
