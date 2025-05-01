@@ -49,42 +49,6 @@ class SettingsScreen extends StatelessWidget {
             
             const SizedBox(height: 16),
             
-            // App settings
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'App Settings',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      title: const Text('Enable Notifications'),
-                      subtitle: const Text('Get notified about feeding times and events'),
-                      value: true, // TODO: Implement with actual settings state
-                      onChanged: (value) {
-                        // TODO: Implement notifications toggle
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.language),
-                      title: const Text('Language'),
-                      subtitle: const Text('English'),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () {
-                        // TODO: Implement language selection
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            
-            const SizedBox(height: 16),
-            
             // About section
             Card(
               child: Padding(
@@ -101,22 +65,6 @@ class SettingsScreen extends StatelessWidget {
                       leading: const Icon(Icons.info),
                       title: const Text('App Version'),
                       subtitle: const Text('1.0.0'),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.text_snippet),
-                      title: const Text('Terms of Service'),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () {
-                        // TODO: Navigate to terms of service
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.privacy_tip),
-                      title: const Text('Privacy Policy'),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () {
-                        // TODO: Navigate to privacy policy
-                      },
                     ),
                   ],
                 ),

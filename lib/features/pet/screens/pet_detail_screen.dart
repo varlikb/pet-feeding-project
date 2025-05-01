@@ -14,6 +14,21 @@ class PetDetailScreen extends StatefulWidget {
 class _PetDetailScreenState extends State<PetDetailScreen> {
   bool _isLoading = false;
   double _feedAmount = 50.0; // Default feed amount in grams
+  double _foodLevel = 100.0; // Default food level percentage
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFoodLevel();
+  }
+
+  Future<void> _loadFoodLevel() async {
+    final petProvider = Provider.of<PetProvider>(context, listen: false);
+    final foodLevel = await petProvider.getCurrentDeviceFoodLevel();
+    setState(() {
+      _foodLevel = foodLevel;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -152,6 +167,47 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
                             ),
                           ),
                           const SizedBox(height: 16),
+                          // Food Level Indicator
+                          Row(
+                            children: [
+                              const Icon(Icons.food_bank),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Food Available: ${_foodLevel.toStringAsFixed(1)}g',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    LinearProgressIndicator(
+                                      value: (_foodLevel / 1000.0).clamp(0.0, 1.0), // Assuming 1kg max capacity
+                                      backgroundColor: Colors.grey[200],
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        _foodLevel > 200 ? Colors.green : Colors.red, // Warning when less than 200g
+                                      ),
+                                    ),
+                                    if (_foodLevel <= 200)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          'Low food level! Please refill.',
+                                          style: TextStyle(
+                                            color: Colors.red[700],
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
                           Text('Amount: ${_feedAmount.toInt()} grams'),
                           Slider(
                             value: _feedAmount,
@@ -172,9 +228,7 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
                                 child: ElevatedButton.icon(
                                   icon: const Icon(Icons.restaurant),
                                   label: const Text('Feed Now'),
-                                  onPressed: petProvider.isConnected 
-                                    ? () => _feedPet(petProvider) 
-                                    : () => _connectDevice(petProvider),
+                                  onPressed: () => _feedPet(petProvider),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Theme.of(context).colorScheme.primary,
                                     foregroundColor: Colors.white,
@@ -183,17 +237,6 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
                               ),
                             ],
                           ),
-                          if (!petProvider.isConnected)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8.0),
-                              child: Text(
-                                'Device not connected. Connect first.',
-                                style: TextStyle(
-                                  color: Colors.orange[700],
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
                         ],
                       ),
                     ),
@@ -246,31 +289,6 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
     );
   }
 
-  Future<void> _connectDevice(PetProvider petProvider) async {
-    setState(() {
-      _isLoading = true;
-    });
-    
-    try {
-      await petProvider.connectDevice();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Connected to device')),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error connecting to device: $e')),
-        );
-      }
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
   Future<void> _feedPet(PetProvider petProvider) async {
     setState(() {
       _isLoading = true;
@@ -278,6 +296,8 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
     
     try {
       await petProvider.feedPet(_feedAmount);
+      // Reload food level after feeding
+      await _loadFoodLevel();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Fed ${_feedAmount.toInt()} grams successfully')),

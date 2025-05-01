@@ -13,6 +13,7 @@ import 'features/pet/screens/register_pet_screen.dart';
 import 'features/pet/screens/pets_list_screen.dart';
 import 'package:pet_feeder/core/services/supabase_service.dart';
 import 'package:pet_feeder/core/screens/loading_screen.dart';
+import 'core/services/feeding_scheduler_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,6 +52,9 @@ class _AppInitializerState extends State<AppInitializer> {
       
       await SupabaseService.initialize();
       
+      // Start the feeding scheduler after Supabase is initialized
+      FeedingSchedulerService().startScheduler();
+      
       setState(() {
         _initialized = true;
       });
@@ -79,6 +83,13 @@ class _AppInitializerState extends State<AppInitializer> {
         });
       }
     }
+  }
+
+  @override
+  void dispose() {
+    // Stop the feeding scheduler when the app is disposed
+    FeedingSchedulerService().stopScheduler();
+    super.dispose();
   }
 
   @override

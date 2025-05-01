@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:pet_feeder/core/services/supabase_service.dart';
 
+enum PasswordResetStage {
+  requestOTP,
+  enterOTP,
+  setNewPassword,
+  success,
+}
+
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
 
@@ -10,17 +17,24 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailController = TextEditingController();
+  final _otpController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  
   bool _isLoading = false;
-  bool _resetSent = false;
   String? _errorMessage;
+  PasswordResetStage _currentStage = PasswordResetStage.requestOTP;
 
   @override
   void dispose() {
     _emailController.dispose();
+    _otpController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleResetPassword() async {
+  Future<void> _requestOTP() async {
     setState(() {
       _errorMessage = null;
     });
@@ -35,15 +49,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     setState(() => _isLoading = true);
     
     try {
-      await SupabaseService.resetPassword(
+      await SupabaseService.sendOTPForPasswordReset(
         email: _emailController.text,
-        redirectUrl: 'io.supabase.petfeeder://reset-callback/',
       );
       
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _resetSent = true;
+          _currentStage = PasswordResetStage.enterOTP;
           _errorMessage = null;
         });
       }
@@ -66,6 +79,69 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     }
   }
 
+  Future<void> _verifyOTPAndSetPassword() async {
+    setState(() {
+      _errorMessage = null;
+    });
+    
+    if (_otpController.text.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter the verification code sent to your email';
+      });
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    
+    try {
+      if (_currentStage == PasswordResetStage.enterOTP) {
+        // Just validate the OTP code format here
+        if (_otpController.text.length < 6) {
+          throw Exception('Invalid verification code');
+        }
+        
+        // Move to password setting stage
+        setState(() {
+          _isLoading = false;
+          _currentStage = PasswordResetStage.setNewPassword;
+        });
+        return;
+      } else {
+        // Validate passwords match
+        if (_passwordController.text.isEmpty) {
+          throw Exception('Please enter a new password');
+        }
+        
+        if (_passwordController.text != _confirmPasswordController.text) {
+          throw Exception('Passwords do not match');
+        }
+        
+        if (_passwordController.text.length < 6) {
+          throw Exception('Password must be at least 6 characters');
+        }
+        
+        // Final verification and password update
+        await SupabaseService.verifyOTPAndUpdatePassword(
+          email: _emailController.text,
+          token: _otpController.text,
+          newPassword: _passwordController.text,
+        );
+        
+        setState(() {
+          _isLoading = false;
+          _currentStage = PasswordResetStage.success;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = e.toString();
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -79,7 +155,25 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 40),
-              if (!_resetSent) ...[
+              
+              if (_errorMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade300),
+                  ),
+                  child: Text(
+                    _errorMessage!,
+                    style: TextStyle(color: Colors.red.shade900),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              
+              // Request OTP Stage
+              if (_currentStage == PasswordResetStage.requestOTP) ...[
                 const Text(
                   'Forgot your password?',
                   style: TextStyle(
@@ -90,25 +184,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Enter your email address and we\'ll send you a link to reset your password.',
+                  'Enter your email address and we\'ll send you a verification code to reset your password.',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
-                if (_errorMessage != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade100,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red.shade300),
-                    ),
-                    child: Text(
-                      _errorMessage!,
-                      style: TextStyle(color: Colors.red.shade900),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
                 TextField(
                   controller: _emailController,
                   decoration: const InputDecoration(
@@ -120,7 +199,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 const SizedBox(height: 32),
                 ElevatedButton(
-                  onPressed: _isLoading ? null : _handleResetPassword,
+                  onPressed: _isLoading ? null : _requestOTP,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Colors.white,
@@ -128,17 +207,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   ),
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('Send Reset Link'),
+                      : const Text('Send Verification Code'),
                 ),
-              ] else ...[
-                const Icon(
-                  Icons.check_circle_outline,
-                  size: 80,
-                  color: Colors.green,
-                ),
-                const SizedBox(height: 24),
+              ],
+              
+              // Enter OTP Stage
+              if (_currentStage == PasswordResetStage.enterOTP) ...[
                 const Text(
-                  'Reset link sent!',
+                  'Check your inbox',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -147,12 +223,110 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'We\'ve sent a password reset link to:\n${_emailController.text}',
+                  'We\'ve sent a verification code to:\n${_emailController.text}',
                   textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                TextField(
+                  controller: _otpController,
+                  decoration: const InputDecoration(
+                    labelText: 'Verification Code',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                  enabled: !_isLoading,
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _verifyOTPAndSetPassword,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text('Verify Code'),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: _isLoading 
+                    ? null 
+                    : () => setState(() => _currentStage = PasswordResetStage.requestOTP),
+                  child: const Text('Back to Email Entry'),
+                ),
+              ],
+              
+              // Set New Password Stage
+              if (_currentStage == PasswordResetStage.setNewPassword) ...[
+                const Text(
+                  'Create new password',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                TextField(
+                  controller: _passwordController,
+                  decoration: const InputDecoration(
+                    labelText: 'New Password',
+                    border: OutlineInputBorder(),
+                  ),
+                  obscureText: true,
+                  enabled: !_isLoading,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _confirmPasswordController,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirm Password',
+                    border: OutlineInputBorder(),
+                  ),
+                  obscureText: true,
+                  enabled: !_isLoading,
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _verifyOTPAndSetPassword,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text('Update Password'),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: _isLoading 
+                    ? null 
+                    : () => setState(() => _currentStage = PasswordResetStage.enterOTP),
+                  child: const Text('Back to Verification'),
+                ),
+              ],
+              
+              // Success Stage
+              if (_currentStage == PasswordResetStage.success) ...[
+                const Icon(
+                  Icons.check_circle_outline,
+                  size: 80,
+                  color: Colors.green,
                 ),
                 const SizedBox(height: 24),
                 const Text(
-                  'Please check your email and follow the instructions to reset your password.',
+                  'Password Reset Successfully!',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Your password has been updated. You can now log in with your new password.',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),

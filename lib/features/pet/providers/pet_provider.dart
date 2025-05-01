@@ -50,14 +50,10 @@ class Pet {
 class PetProvider extends ChangeNotifier {
   Pet? _currentPet;
   List<Pet> _pets = [];
-  bool _isConnected = false;
-  BluetoothDevice? _device;
-  BluetoothCharacteristic? _characteristic;
   bool _isLoading = false;
 
   Pet? get currentPet => _currentPet;
   List<Pet> get pets => _pets;
-  bool get isConnected => _isConnected;
   bool get isLoading => _isLoading;
 
   Future<void> fetchPets() async {
@@ -99,7 +95,26 @@ class PetProvider extends ChangeNotifier {
       if (user == null) {
         throw Exception('User not authenticated');
       }
+
+      // First, check if a device with this key already exists
+      final existingDevice = await SupabaseService.findDeviceByKey(deviceKey);
+      String deviceId;
+
+      if (existingDevice != null) {
+        // Use existing device
+        deviceId = existingDevice['id'];
+      } else {
+        // Create new device
+        final newDevice = await SupabaseService.addDevice({
+          'name': 'Pet Feeder for $name',
+          'device_key': deviceKey,
+          'user_id': user.id,
+          'food_level': 100.0,
+        });
+        deviceId = newDevice['id'];
+      }
       
+      // Register the pet
       final pet = {
         'name': name,
         'weight': weight,
@@ -109,7 +124,14 @@ class PetProvider extends ChangeNotifier {
         'user_id': user.id,
       };
       
-      await SupabaseService.addPet(pet);
+      final addedPet = await SupabaseService.addPet(pet);
+      
+      // Create pet-device assignment
+      await SupabaseService.assignPetToDevice(
+        addedPet['id'],
+        deviceId,
+        true, // Set as primary device
+      );
       
       // Refresh the pet list
       await fetchPets();
@@ -184,10 +206,39 @@ class PetProvider extends ChangeNotifier {
     }
     
     try {
+      // Get the primary device for this pet
+      final deviceAssignment = await SupabaseService.getPrimaryDeviceForPet(_currentPet!.id);
+      if (deviceAssignment == null) {
+        throw Exception('No device assigned to pet');
+      }
+
+      // Get current device details
+      final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_id']);
+      if (deviceDetails == null) {
+        throw Exception('Device not found');
+      }
+
+      // Check if there's enough food in the device
+      final currentFoodLevel = (deviceDetails['food_level'] as num).toDouble();
+      if (currentFoodLevel < amount) {
+        throw Exception('Not enough food in device. Available: ${currentFoodLevel.toStringAsFixed(1)}g');
+      }
+
+      // Calculate new food level by subtracting the feeding amount
+      final newFoodLevel = currentFoodLevel - amount;
+
+      // Update device food level
+      await SupabaseService.updateDevice(
+        deviceAssignment['device_id'],
+        {'food_level': newFoodLevel},
+      );
+      
       final record = {
         'pet_id': _currentPet!.id,
+        'device_id': deviceAssignment['device_id'],
         'amount': amount,
         'feeding_time': DateTime.now().toIso8601String(),
+        'feeding_type': 'manual', // Can be 'manual' or 'scheduled'
         'user_id': _currentPet!.userId,
       };
       
@@ -197,81 +248,47 @@ class PetProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> connectDevice() async {
-    if (_currentPet == null) return;
-
-    try {
-      // Start scanning for devices
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 4));
-      
-      // Listen for scan results
-      await for (final result in FlutterBluePlus.scanResults) {
-        for (ScanResult r in result) {
-          if (r.device.remoteId.toString() == _currentPet!.deviceKey) {
-            _device = r.device;
-            break;
-          }
-        }
-      }
-
-      if (_device == null) {
-        throw Exception('Device not found');
-      }
-
-      // Connect to the device
-      await _device!.connect();
-      
-      // Discover services
-      List<BluetoothService> services = await _device!.discoverServices();
-      
-      // Find the characteristic we want to write to
-      for (BluetoothService service in services) {
-        for (BluetoothCharacteristic characteristic in service.characteristics) {
-          if (characteristic.properties.write) {
-            _characteristic = characteristic;
-            break;
-          }
-        }
-      }
-
-      _isConnected = true;
-      notifyListeners();
-    } catch (e) {
-      _isConnected = false;
-      notifyListeners();
-      throw Exception('Failed to connect to device: $e');
-    } finally {
-      await FlutterBluePlus.stopScan();
-    }
-  }
-
   Future<void> feedPet(double amount) async {
-    if (!_isConnected || _characteristic == null) {
-      throw Exception('Device not connected');
+    if (_currentPet == null) {
+      throw Exception('No pet selected');
     }
 
     try {
-      final command = 'FEED:$amount';
-      await _characteristic!.write(Uint8List.fromList(command.codeUnits));
-      
-      // Record the feeding in the database
+      // Record the feeding in Supabase
       await recordFeeding(amount);
+      debugPrint('Feeding recorded: ${amount}g for pet ${_currentPet!.name}');
     } catch (e) {
-      throw Exception('Failed to send feeding command: $e');
+      debugPrint('Error recording feeding: $e');
+      throw Exception('Failed to record feeding: $e');
     }
   }
 
-  Future<void> disconnect() async {
-    await _device?.disconnect();
-    _device = null;
-    _characteristic = null;
-    _isConnected = false;
-    notifyListeners();
+  // Add method to get device food level
+  Future<double> getCurrentDeviceFoodLevel() async {
+    if (_currentPet == null) {
+      return 0.0;
+    }
+
+    try {
+      final deviceAssignment = await SupabaseService.getPrimaryDeviceForPet(_currentPet!.id);
+      if (deviceAssignment == null) {
+        return 0.0;
+      }
+
+      final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_id']);
+      if (deviceDetails == null) {
+        return 0.0;
+      }
+
+      return (deviceDetails['food_level'] as num).toDouble();
+    } catch (e) {
+      debugPrint('Error getting device food level: $e');
+      return 0.0;
+    }
   }
 
   @override
   void dispose() {
-    disconnect();
     super.dispose();
   }
 }

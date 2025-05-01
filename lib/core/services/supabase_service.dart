@@ -136,6 +136,40 @@ class SupabaseService {
     );
   }
 
+  static Future<void> sendOTPForPasswordReset({
+    required String email,
+  }) async {
+    if (_forceOfflineMode) {
+      throw Exception('App is running in offline mode. Password reset not available.');
+    }
+    await client.auth.resetPasswordForEmail(
+      email,
+    );
+  }
+  
+  static Future<AuthResponse> verifyOTPAndUpdatePassword({
+    required String email,
+    required String token,
+    required String newPassword,
+  }) async {
+    if (_forceOfflineMode) {
+      throw Exception('App is running in offline mode. Password reset not available.');
+    }
+    // First verify the OTP
+    final response = await client.auth.verifyOTP(
+      email: email,
+      token: token,
+      type: OtpType.recovery, // Use recovery type instead of magiclink
+    );
+    
+    // Then update the password
+    await client.auth.updateUser(
+      UserAttributes(password: newPassword),
+    );
+    
+    return response;
+  }
+
   // Database operations
   static Future<List<Map<String, dynamic>>> fetchPets() async {
     if (_forceOfflineMode) {
@@ -168,13 +202,18 @@ class SupabaseService {
     return response;
   }
 
-  static Future<void> addPet(Map<String, dynamic> petData) async {
+  static Future<Map<String, dynamic>> addPet(Map<String, dynamic> petData) async {
     if (_forceOfflineMode) {
-      return; // Just return in offline mode
+      return {}; // Return empty map in offline mode
     }
     
     try {
-      await client.from('pets').insert(petData).select();
+      final response = await client
+          .from('pets')
+          .insert(petData)
+          .select()
+          .single();
+      return response;
     } catch (e) {
       debugPrint('Error adding pet: $e');
       throw Exception('Failed to add pet: $e');
@@ -203,13 +242,18 @@ class SupabaseService {
       return []; // Return empty list in offline mode
     }
     
-    final response = await client
-        .from('feeding_records')
-        .select('*')
-        .eq('pet_id', petId)
-        .order('feeding_time', ascending: false);
-
-    return response;
+    try {
+      final response = await client
+          .from('feeding_records')
+          .select('*')
+          .eq('pet_id', petId)
+          .order('feeding_time', ascending: false);
+  
+      return response;
+    } catch (e) {
+      debugPrint('Error fetching feeding records: $e');
+      return [];
+    }
   }
 
   static Future<void> addFeedingRecord(Map<String, dynamic> recordData) async {
@@ -217,7 +261,77 @@ class SupabaseService {
       return; // Just return in offline mode
     }
     
-    await client.from('feeding_records').insert(recordData);
+    try {
+      await client.from('feeding_records').insert(recordData);
+    } catch (e) {
+      debugPrint('Error adding feeding record: $e');
+      throw Exception('Failed to record feeding: $e');
+    }
+  }
+  
+  // Feeding schedules
+  static Future<List<Map<String, dynamic>>> fetchFeedingSchedules(String petId) async {
+    if (_forceOfflineMode) {
+      return []; // Return empty list in offline mode
+    }
+    
+    try {
+      final response = await client
+          .from('feeding_schedules')
+          .select('*')
+          .eq('pet_id', petId)
+          .order('start_time', ascending: true);
+  
+      return response;
+    } catch (e) {
+      debugPrint('Error fetching feeding schedules: $e');
+      return [];
+    }
+  }
+  
+  static Future<Map<String, dynamic>> addFeedingSchedule(Map<String, dynamic> scheduleData) async {
+    if (_forceOfflineMode) {
+      // Return a fake ID in offline mode
+      return {'id': DateTime.now().millisecondsSinceEpoch.toString()};
+    }
+    
+    try {
+      final response = await client
+          .from('feeding_schedules')
+          .insert(scheduleData)
+          .select('id')
+          .single();
+      return response;
+    } catch (e) {
+      debugPrint('Error adding feeding schedule: $e');
+      throw Exception('Failed to add feeding schedule: $e');
+    }
+  }
+  
+  static Future<void> updateFeedingSchedule(String id, Map<String, dynamic> scheduleData) async {
+    if (_forceOfflineMode) {
+      return; // Just return in offline mode
+    }
+    
+    try {
+      await client.from('feeding_schedules').update(scheduleData).eq('id', id);
+    } catch (e) {
+      debugPrint('Error updating feeding schedule: $e');
+      throw Exception('Failed to update feeding schedule: $e');
+    }
+  }
+  
+  static Future<void> deleteFeedingSchedule(String id) async {
+    if (_forceOfflineMode) {
+      return; // Just return in offline mode
+    }
+    
+    try {
+      await client.from('feeding_schedules').delete().eq('id', id);
+    } catch (e) {
+      debugPrint('Error deleting feeding schedule: $e');
+      throw Exception('Failed to delete feeding schedule: $e');
+    }
   }
 
   // Device management
@@ -238,12 +352,57 @@ class SupabaseService {
     return response;
   }
 
-  static Future<void> addDevice(Map<String, dynamic> deviceData) async {
+  static Future<Map<String, dynamic>?> findDeviceByKey(String deviceKey) async {
     if (_forceOfflineMode) {
-      return; // Just return in offline mode
+      return null;
     }
     
-    await client.from('devices').insert(deviceData);
+    try {
+      final response = await client
+          .from('devices')
+          .select('*')
+          .eq('device_key', deviceKey)
+          .single();
+      return response;
+    } catch (e) {
+      debugPrint('Error finding device by key: $e');
+      return null;
+    }
+  }
+
+  static Future<void> assignPetToDevice(String petId, String deviceId, bool isPrimary) async {
+    if (_forceOfflineMode) {
+      return;
+    }
+    
+    try {
+      await client.from('pet_device_assignments').insert({
+        'pet_id': petId,
+        'device_id': deviceId,
+        'is_primary': isPrimary,
+      });
+    } catch (e) {
+      debugPrint('Error assigning pet to device: $e');
+      throw Exception('Failed to assign pet to device: $e');
+    }
+  }
+
+  static Future<Map<String, dynamic>> addDevice(Map<String, dynamic> deviceData) async {
+    if (_forceOfflineMode) {
+      return {};
+    }
+    
+    try {
+      final response = await client
+          .from('devices')
+          .insert(deviceData)
+          .select()
+          .single();
+      return response;
+    } catch (e) {
+      debugPrint('Error adding device: $e');
+      throw Exception('Failed to add device: $e');
+    }
   }
 
   static Future<void> updateDevice(String id, Map<String, dynamic> deviceData) async {
@@ -260,5 +419,116 @@ class SupabaseService {
     }
     
     await client.from('devices').delete().eq('id', id);
+  }
+
+  // Debug utility to inspect tables
+  static Future<String> getTableInfo(String tableName) async {
+    if (_forceOfflineMode) {
+      return "Offline mode - cannot inspect tables";
+    }
+    
+    try {
+      // Try to select a single row to see column errors
+      final response = await client
+          .from(tableName)
+          .select('*')
+          .limit(1);
+      
+      return "Table structure for $tableName appears valid. Sample data: $response";
+    } catch (e) {
+      // If there's an error, try to get more diagnostic info
+      return "Error with table $tableName: $e";
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getPrimaryDeviceForPet(String petId) async {
+    if (_forceOfflineMode) {
+      return null;
+    }
+    
+    try {
+      final response = await client
+          .from('pet_device_assignments')
+          .select('*')
+          .eq('pet_id', petId)
+          .eq('is_primary', true)
+          .single();
+      return response;
+    } catch (e) {
+      debugPrint('Error getting primary device for pet: $e');
+      return null;
+    }
+  }
+
+  static Future<void> recordScheduledFeeding(String scheduleId) async {
+    if (_forceOfflineMode) {
+      return;
+    }
+    
+    try {
+      // First get the schedule details
+      final schedule = await client
+          .from('feeding_schedules')
+          .select('*, pets!inner(*), pet_device_assignments!inner(*)')
+          .eq('id', scheduleId)
+          .eq('pet_device_assignments.is_primary', true)
+          .single();
+      
+      if (schedule == null) {
+        throw Exception('Schedule not found');
+      }
+
+      // Get current device details
+      final deviceId = schedule['pet_device_assignments']['device_id'];
+      final deviceDetails = await getDevice(deviceId);
+      if (deviceDetails == null) {
+        throw Exception('Device not found');
+      }
+
+      // Check if there's enough food and calculate new level
+      final amount = (schedule['amount'] as num).toDouble();
+      final currentFoodLevel = (deviceDetails['food_level'] as num).toDouble();
+      
+      if (currentFoodLevel < amount) {
+        throw Exception('Not enough food in device. Available: ${currentFoodLevel.toStringAsFixed(1)}g');
+      }
+
+      final newFoodLevel = currentFoodLevel - amount;
+
+      // Update device food level
+      await updateDevice(deviceId, {'food_level': newFoodLevel});
+
+      // Create the feeding record
+      await client.from('feeding_records').insert({
+        'pet_id': schedule['pets']['id'],
+        'device_id': deviceId,
+        'amount': amount,
+        'feeding_time': DateTime.now().toIso8601String(),
+        'feeding_type': 'scheduled',
+        'schedule_id': scheduleId,
+        'user_id': schedule['pets']['user_id'],
+      });
+    } catch (e) {
+      debugPrint('Error recording scheduled feeding: $e');
+      throw Exception('Failed to record scheduled feeding: $e');
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getDevice(String deviceId) async {
+    if (_forceOfflineMode) {
+      return null;
+    }
+    
+    try {
+      final response = await client
+          .from('devices')
+          .select('*')
+          .eq('id', deviceId)
+          .single();
+      return response;
+    } catch (e) {
+      debugPrint('Error getting device: $e');
+      return null;
+    }
   }
 } 
