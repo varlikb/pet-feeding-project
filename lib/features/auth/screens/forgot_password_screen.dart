@@ -59,6 +59,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           _currentStage = PasswordResetStage.enterOTP;
           _errorMessage = null;
         });
+        
+        // Show a snackbar to inform user about the OTP
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('A verification code has been sent to your email. Please check your inbox and spam folder.'),
+            duration: Duration(seconds: 8),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -91,13 +99,37 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       return;
     }
 
+    if (_currentStage == PasswordResetStage.setNewPassword) {
+      // Validate passwords
+      if (_passwordController.text.isEmpty) {
+        setState(() {
+          _errorMessage = 'Please enter a new password';
+        });
+        return;
+      }
+      
+      if (_passwordController.text != _confirmPasswordController.text) {
+        setState(() {
+          _errorMessage = 'Passwords do not match';
+        });
+        return;
+      }
+      
+      if (_passwordController.text.length < 6) {
+        setState(() {
+          _errorMessage = 'Password must be at least 6 characters';
+        });
+        return;
+      }
+    }
+
     setState(() => _isLoading = true);
     
     try {
       if (_currentStage == PasswordResetStage.enterOTP) {
         // Just validate the OTP code format here
         if (_otpController.text.length < 6) {
-          throw Exception('Invalid verification code');
+          throw Exception('Please enter the complete verification code');
         }
         
         // Move to password setting stage
@@ -106,31 +138,28 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           _currentStage = PasswordResetStage.setNewPassword;
         });
         return;
-      } else {
-        // Validate passwords match
-        if (_passwordController.text.isEmpty) {
-          throw Exception('Please enter a new password');
-        }
-        
-        if (_passwordController.text != _confirmPasswordController.text) {
-          throw Exception('Passwords do not match');
-        }
-        
-        if (_passwordController.text.length < 6) {
-          throw Exception('Password must be at least 6 characters');
-        }
-        
-        // Final verification and password update
-        await SupabaseService.verifyOTPAndUpdatePassword(
-          email: _emailController.text,
-          token: _otpController.text,
-          newPassword: _passwordController.text,
-        );
-        
+      }
+      
+      // Final verification and password update
+      await SupabaseService.verifyOTPAndUpdatePassword(
+        email: _emailController.text,
+        token: _otpController.text,
+        newPassword: _passwordController.text,
+      );
+      
+      if (mounted) {
         setState(() {
           _isLoading = false;
           _currentStage = PasswordResetStage.success;
         });
+        
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password has been successfully reset!'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {

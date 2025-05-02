@@ -91,59 +91,36 @@ class AuthProvider extends ChangeNotifier {
 
   Future<Map<String, dynamic>> register(String name, String email, String password) async {
     try {
-      // Normal Supabase registration
       final response = await SupabaseService.signUp(
         email: email,
         password: password,
         data: {'name': name},
       );
       
-      final user = response.user;
-      if (user != null) {
-        _isAuthenticated = true;
-        _userEmail = user.email;
-        _userName = name;
-        _userId = user.id;
-        _lastError = null;
-        _isOfflineMode = false;
-        
-        // Save registration state
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('isAuthenticated', true);
-        await prefs.setString('userEmail', _userEmail ?? '');
-        await prefs.setString('userName', _userName ?? '');
-        await prefs.setString('userId', _userId ?? '');
-        await prefs.setBool('isOfflineMode', false);
-        
-        notifyListeners();
-        return {'success': true};
-      }
-      _lastError = 'Registration failed. Please try again.';
-      notifyListeners();
-      return {'success': false, 'error': _lastError};
+      return {'success': true};
     } catch (e) {
-      String errorMessage = e.toString();
+      _lastError = e.toString();
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> verifyEmail(String email, String token) async {
+    try {
+      final response = await SupabaseService.verifyEmail(
+        email: email,
+        token: token,
+      );
       
-      // Format error messages to be more user-friendly
-      if (errorMessage.contains('User already registered')) {
-        _lastError = 'This email is already registered. Please try logging in instead.';
-      } else if (errorMessage.contains('Password should be at least')) {
-        _lastError = 'Password must be at least 6 characters long.';
-      } else if (errorMessage.contains('invalid email')) {
-        _lastError = 'Please enter a valid email address.';
-      } else if (errorMessage.contains('not initialized') || 
-                 errorMessage.contains('network') ||
-                 errorMessage.contains('connection')) {
-        _lastError = 'Unable to connect to the server. Please check your internet connection and try again.';
-      } else if (errorMessage.contains('too many requests')) {
-        _lastError = 'Too many registration attempts. Please wait a few minutes and try again.';
-      } else {
-        _lastError = 'An unexpected error occurred during registration. Please try again.';
-        debugPrint('Registration error: $errorMessage');
-      }
-      
-      notifyListeners();
-      return {'success': false, 'error': _lastError};
+      return {'success': true};
+    } catch (e) {
+      _lastError = e.toString();
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
     }
   }
 
