@@ -89,11 +89,22 @@ class SupabaseService {
     if (_forceOfflineMode) {
       throw Exception('App is running in offline mode. Use offline login instead.');
     }
-    return await client.auth.signUp(
+    
+    final response = await client.auth.signUp(
       email: email,
       password: password,
       data: data,
+      emailRedirectTo: null, // Force OTP verification instead of redirect link
     );
+
+    // After signup, immediately send OTP for verification
+    await client.auth.signInWithOtp(
+      email: email,
+      shouldCreateUser: false,
+      emailRedirectTo: null,
+    );
+    
+    throw Exception('Please check your email for a verification code to complete your registration.');
   }
 
   static Future<AuthResponse> signIn({
@@ -103,10 +114,47 @@ class SupabaseService {
     if (_forceOfflineMode) {
       throw Exception('App is running in offline mode. Use offline login instead.');
     }
-    return await client.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
+    try {
+      return await client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+    } catch (e) {
+      String message = e.toString();
+      
+      // Make error messages more user-friendly
+      if (message.contains('email_not_confirmed')) {
+        // If email not confirmed, send another verification OTP
+        await client.auth.signInWithOtp(
+          email: email,
+          shouldCreateUser: false,
+          emailRedirectTo: null,
+        );
+        throw Exception('Please verify your email address. A new verification code has been sent to your email.');
+      } else if (message.contains('Invalid login credentials')) {
+        throw Exception('Invalid email or password.');
+      }
+      throw Exception(message);
+    }
+  }
+
+  static Future<AuthResponse> verifyEmail({
+    required String email,
+    required String token,
+  }) async {
+    if (_forceOfflineMode) {
+      throw Exception('App is running in offline mode.');
+    }
+    
+    try {
+      return await client.auth.verifyOTP(
+        email: email,
+        token: token,
+        type: OtpType.signup,
+      );
+    } catch (e) {
+      throw Exception('Invalid or expired verification code. Please try again.');
+    }
   }
 
   static Future<void> signOut() async {
@@ -142,8 +190,12 @@ class SupabaseService {
     if (_forceOfflineMode) {
       throw Exception('App is running in offline mode. Password reset not available.');
     }
-    await client.auth.resetPasswordForEmail(
-      email,
+    
+    await client.auth.signInWithOtp(
+      email: email,
+      shouldCreateUser: false,
+      emailRedirectTo: null,
+      data: {'type': 'recovery'},  // This forces OTP instead of magic link
     );
   }
   
@@ -155,19 +207,28 @@ class SupabaseService {
     if (_forceOfflineMode) {
       throw Exception('App is running in offline mode. Password reset not available.');
     }
-    // First verify the OTP
-    final response = await client.auth.verifyOTP(
-      email: email,
-      token: token,
-      type: OtpType.recovery, // Use recovery type instead of magiclink
-    );
     
-    // Then update the password
-    await client.auth.updateUser(
-      UserAttributes(password: newPassword),
-    );
-    
-    return response;
+    try {
+      // First verify the OTP
+      final response = await client.auth.verifyOTP(
+        email: email,
+        token: token,
+        type: OtpType.recovery,
+      );
+      
+      // If verification successful, update the password
+      if (response.user != null) {
+        await client.auth.updateUser(
+          UserAttributes(password: newPassword),
+        );
+      } else {
+        throw Exception('Verification failed. Please try again.');
+      }
+      
+      return response;
+    } catch (e) {
+      throw Exception('Invalid or expired verification code. Please try again.');
+    }
   }
 
   // Database operations
