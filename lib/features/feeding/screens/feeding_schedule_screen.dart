@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:pet_feeder/core/services/supabase_service.dart';
+import 'package:pet_feeder/features/feeding/screens/feeding_schedule_test_screen.dart';
 
 class FeedingSchedule {
   final String id;
@@ -52,12 +53,18 @@ class FeedingSchedule {
   
   // Create from JSON from database
   factory FeedingSchedule.fromJson(Map<String, dynamic> json) {
+    // Convert old frequency values to new ones
+    String frequency = json['frequency'] as String;
+    if (frequency == 'daily') frequency = 'day';
+    if (frequency == 'twice-daily') frequency = 'day';
+    if (frequency == 'custom') frequency = 'day';
+    
     return FeedingSchedule(
       id: json['id'] as String,
       petId: json['pet_id'] as String,
       startDate: DateTime.parse(json['start_date'] as String),
       endDate: DateTime.parse(json['end_date'] as String),
-      frequency: json['frequency'] as String,
+      frequency: frequency,
       startTime: stringToTimeOfDay(json['start_time'] as String),
       amount: (json['amount'] as num).toDouble(),
     );
@@ -200,6 +207,18 @@ class _FeedingScheduleScreenState extends State<FeedingScheduleScreen> {
         title: const Text('Feeding Schedules'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.science),
+            tooltip: 'Test Scheduler',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const FeedingScheduleTestScreen(),
+                ),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadSchedules,
           ),
@@ -273,7 +292,7 @@ class _FeedingScheduleScreenState extends State<FeedingScheduleScreen> {
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
                                         Text(
-                                          'Daily at ${_formatTimeOfDay(schedule.startTime)}',
+                                          schedule.frequency == 'hour' ? 'Hourly' : 'Daily at ${_formatTimeOfDay(schedule.startTime)}',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16,
@@ -412,10 +431,10 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
   double _amount = 50;
   DateTime _startDate = DateTime.now();
   DateTime _endDate = DateTime.now().add(const Duration(days: 30));
-  String _frequency = 'daily';
+  String _frequency = 'day';
   bool _isLoading = false;
   
-  final List<String> _frequencies = ['daily', 'twice-daily', 'custom'];
+  final List<String> _frequencies = ['day', 'hour'];
   
   Future<void> _selectTime(BuildContext context) async {
     final TimeOfDay? picked = await showTimePicker(
@@ -511,7 +530,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
                 items: _frequencies.map((String value) {
                   return DropdownMenuItem<String>(
                     value: value,
-                    child: Text(value.replaceAll('-', ' ').capitalize()),
+                    child: Text(value == 'day' ? 'Daily' : 'Hourly'),
                   );
                 }).toList(),
                 onChanged: (String? newValue) {
@@ -646,7 +665,7 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
   late String _frequency;
   bool _isLoading = false;
   
-  final List<String> _frequencies = ['daily', 'twice-daily', 'custom'];
+  final List<String> _frequencies = ['day', 'hour'];  // Updated frequency options
   
   @override
   void initState() {
@@ -656,7 +675,10 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
     _amount = widget.schedule.amount;
     _startDate = widget.schedule.startDate;
     _endDate = widget.schedule.endDate;
-    _frequency = widget.schedule.frequency;
+    // Convert old frequency values if necessary
+    _frequency = widget.schedule.frequency == 'daily' || widget.schedule.frequency == 'twice-daily' || widget.schedule.frequency == 'custom' 
+        ? 'day' 
+        : widget.schedule.frequency;
   }
   
   Future<void> _selectTime(BuildContext context) async {
@@ -753,7 +775,7 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
                 items: _frequencies.map((String value) {
                   return DropdownMenuItem<String>(
                     value: value,
-                    child: Text(value.replaceAll('-', ' ').capitalize()),
+                    child: Text(value == 'day' ? 'Daily' : 'Hourly'),
                   );
                 }).toList(),
                 onChanged: (String? newValue) {

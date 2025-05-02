@@ -171,7 +171,7 @@ class _RegisterPetScreenState extends State<RegisterPetScreen> {
               TextFormField(
                 controller: _ageController,
                 decoration: const InputDecoration(
-                  labelText: 'Age (months)',
+                  labelText: 'Age (years)',
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,

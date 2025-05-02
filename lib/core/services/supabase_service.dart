@@ -252,6 +252,36 @@ class SupabaseService {
   }
 
   // Feeding records
+  static Future<List<Map<String, dynamic>>> fetchAllFeedingRecords() async {
+    if (_forceOfflineMode) {
+      return []; // Return empty list in offline mode
+    }
+    
+    final userId = getCurrentUser()?.id;
+    if (userId == null) return [];
+    
+    try {
+      final response = await client
+          .from('feeding_records')
+          .select('''
+            *,
+            devices (
+              device_key
+            ),
+            pets!feeding_records_pet_id_fkey (
+              name
+            )
+          ''')
+          .eq('user_id', userId)  // Only get records for the current user's pets
+          .order('feeding_time', ascending: false);
+  
+      return response;
+    } catch (e) {
+      debugPrint('Error fetching all feeding records: $e');
+      return [];
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> fetchFeedingRecords(String petId) async {
     if (_forceOfflineMode) {
       return []; // Return empty list in offline mode
@@ -260,7 +290,15 @@ class SupabaseService {
     try {
       final response = await client
           .from('feeding_records')
-          .select('*')
+          .select('''
+            *,
+            devices (
+              device_key
+            ),
+            pets!feeding_records_pet_id_fkey (
+              name
+            )
+          ''')
           .eq('pet_id', petId)
           .order('feeding_time', ascending: false);
   

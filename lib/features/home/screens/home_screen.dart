@@ -72,27 +72,18 @@ class HomeScreen extends StatelessWidget {
                       context,
                       'Register New Pet',
                       Icons.add_circle_outline,
-                      () => Navigator.of(context).pushNamed('/register_pet'),
+                      () => Navigator.of(context).pushNamed('/register-pet'),
                     ),
                     _buildFeatureCard(
                       context,
                       'Feeding History',
                       Icons.history,
                       () {
-                        final currentPet = petProvider.currentPet;
-                        if (currentPet != null) {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => FeedingHistoryScreen(
-                                petId: currentPet.id,
-                              ),
-                            ),
-                          );
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Please select a pet first')),
-                          );
-                        }
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const FeedingHistoryScreen(),
+                          ),
+                        );
                       },
                     ),
                     _buildFeatureCard(
@@ -121,20 +112,11 @@ class HomeScreen extends StatelessWidget {
               break;
             case 2:
               // Navigate to feeding history
-              final currentPet = petProvider.currentPet;
-              if (currentPet != null) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => FeedingHistoryScreen(
-                      petId: currentPet.id,
-                    ),
-                  ),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please select a pet first')),
-                );
-              }
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const FeedingHistoryScreen(),
+                ),
+              );
               break;
             case 3:
               // Navigate to profile/settings

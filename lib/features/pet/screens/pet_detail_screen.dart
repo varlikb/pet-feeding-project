@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/pet_provider.dart';
 import 'edit_pet_screen.dart';
 import '../../feeding/screens/feeding_schedule_screen.dart';
+import '../../feeding/screens/feeding_history_screen.dart';
 
 class PetDetailScreen extends StatefulWidget {
   const PetDetailScreen({Key? key}) : super(key: key);
@@ -273,6 +274,24 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (context) => FeedingScheduleScreen(petId: pet.id),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 50),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Feeding History Button
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.history),
+                    label: const Text('View Feeding History'),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => FeedingHistoryScreen(petId: pet.id),
                         ),
                       );
                     },

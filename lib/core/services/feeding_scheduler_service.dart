@@ -35,6 +35,12 @@ class FeedingSchedulerService {
     _lastCheck = null;
     debugPrint('Feeding scheduler stopped');
   }
+
+  // For testing purposes - force check scheduled feedings
+  Future<void> forceCheckScheduledFeedings() async {
+    debugPrint('Force checking scheduled feedings...');
+    await _checkScheduledFeedings();
+  }
   
   Future<void> _checkScheduledFeedings() async {
     debugPrint('Checking for scheduled feedings...');
@@ -43,6 +49,8 @@ class FeedingSchedulerService {
       final now = DateTime.now();
       final currentTime = TimeOfDay.fromDateTime(now);
       final currentTimeStr = '${currentTime.hour.toString().padLeft(2, '0')}:${currentTime.minute.toString().padLeft(2, '0')}';
+      
+      debugPrint('Current time: $currentTimeStr');
       
       // Get all active schedules for the current time
       // Join with pets first, then to pet_device_assignments
@@ -64,10 +72,14 @@ class FeedingSchedulerService {
           .eq('start_time', currentTimeStr)
           .eq('pets.pet_device_assignments.is_primary', true);
 
+      debugPrint('Found ${schedules.length} schedules for current time');
+
       for (final schedule in schedules) {
         try {
           final frequency = schedule['frequency'] as String;
           final lastCheck = _lastCheck ?? now.subtract(const Duration(minutes: 1));
+          
+          debugPrint('Processing schedule ${schedule['id']} with frequency $frequency');
           
           // For hourly schedules, check if we've crossed an hour boundary
           if (frequency == 'hour' && 
@@ -95,6 +107,8 @@ class FeedingSchedulerService {
   
   Future<void> _executeScheduledFeeding(Map<String, dynamic> schedule) async {
     try {
+      debugPrint('Executing scheduled feeding for schedule ${schedule['id']}');
+      
       // Get device ID from the nested pet_device_assignments
       final deviceId = schedule['pets']['pet_device_assignments'][0]['device_id'];
       final deviceDetails = await SupabaseService.getDevice(deviceId);
@@ -106,6 +120,8 @@ class FeedingSchedulerService {
       final amount = (schedule['amount'] as num).toDouble();
       final currentFoodLevel = (deviceDetails['food_level'] as num).toDouble();
       
+      debugPrint('Device food level: $currentFoodLevel, Required amount: $amount');
+      
       if (currentFoodLevel < amount) {
         throw Exception('Not enough food in device. Available: ${currentFoodLevel.toStringAsFixed(1)}g');
       }
@@ -114,6 +130,7 @@ class FeedingSchedulerService {
 
       // Update device food level
       await SupabaseService.updateDevice(deviceId, {'food_level': newFoodLevel});
+      debugPrint('Updated device food level to: $newFoodLevel');
 
       // Create the feeding record
       await SupabaseService.client.from('feeding_records').insert({
@@ -122,7 +139,6 @@ class FeedingSchedulerService {
         'amount': amount,
         'feeding_time': DateTime.now().toIso8601String(),
         'feeding_type': 'scheduled',
-        'schedule_id': schedule['id'],
         'user_id': schedule['pets']['user_id'],
       });
       
