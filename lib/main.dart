@@ -203,6 +203,7 @@ class MyApp extends StatelessWidget {
           '/register-pet': (context) => const RegisterPetScreen(),
           '/pets': (context) => const PetsListScreen(),
           '/admin-dashboard': (context) => const AdminDashboardScreen(),
+          '/admin': (context) => const AdminDashboardScreen(),
           '/pair-device': (context) => const PairDeviceScreen(),
           '/devices': (context) => const ManageDevicesScreen(),
         },
