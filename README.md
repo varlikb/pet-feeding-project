@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Pet Feeder App
 
 A Flutter application for managing pet feeding schedules and devices.
@@ -82,3 +83,6 @@ Before deploying to production:
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+=======
+# pet-feeding-project
+>>>>>>> myrepo/main
