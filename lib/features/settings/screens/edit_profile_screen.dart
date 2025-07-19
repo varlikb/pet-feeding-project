@@ -15,6 +15,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _nameController;
   bool _isLoading = false;
   Map<String, dynamic> _profile = {};
+  String? _avatarUrl;
 
   @override
   void initState() {
@@ -54,41 +55,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _updateProfile() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final updatedProfile = {
-        'name': _nameController.text,
-      };
-
-      await SupabaseService.updateProfile(updatedProfile);
-
-      // Update the AuthProvider with the new name
-      if (context.mounted) {
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        authProvider.updateUserName(_nameController.text);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile updated successfully')),
+    if (_formKey.currentState!.validate()) {
+      try {
+        await SupabaseService.updateProfile(
+          name: _nameController.text,
+          avatarUrl: _avatarUrl,
         );
-        Navigator.of(context).pop();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Profile updated successfully')),
+          );
+          Navigator.of(context).pop();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error updating profile: $e')),
+          );
+        }
       }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating profile: $e')),
-        );
-      }
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
     }
   }
 

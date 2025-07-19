@@ -2,17 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:pet_feeder/core/services/supabase_service.dart';
 
 class Device {
-  final String id;
-  final String name;
   final String deviceKey;
+  final String name;
   final String userId;
   final double foodLevel;
   final DateTime? lastFeeding;
 
   Device({
-    required this.id,
-    required this.name,
     required this.deviceKey,
+    required this.name,
     required this.userId,
     required this.foodLevel,
     this.lastFeeding,
@@ -20,9 +18,8 @@ class Device {
 
   factory Device.fromJson(Map<String, dynamic> json) {
     return Device(
-      id: json['id'] as String,
-      name: json['name'] as String,
       deviceKey: json['device_key'] as String,
+      name: json['name'] as String,
       userId: json['user_id'] as String,
       foodLevel: (json['food_level'] as num).toDouble(),
       lastFeeding: json['last_feeding'] != null 
@@ -33,9 +30,8 @@ class Device {
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
-      'name': name,
       'device_key': deviceKey,
+      'name': name,
       'user_id': userId,
       'food_level': foodLevel,
       'last_feeding': lastFeeding?.toIso8601String(),
@@ -45,7 +41,7 @@ class Device {
 
 class FeedingSchedule {
   final String id;
-  final String deviceId;
+  final String deviceKey;
   final DateTime startDate;
   final DateTime endDate;
   final String frequency; // 'hour' or 'day'
@@ -55,7 +51,7 @@ class FeedingSchedule {
 
   FeedingSchedule({
     required this.id,
-    required this.deviceId,
+    required this.deviceKey,
     required this.startDate,
     required this.endDate,
     required this.frequency,
@@ -67,7 +63,7 @@ class FeedingSchedule {
   factory FeedingSchedule.fromJson(Map<String, dynamic> json) {
     return FeedingSchedule(
       id: json['id'] as String,
-      deviceId: json['device_id'] as String,
+      deviceKey: json['device_key'] as String,
       startDate: DateTime.parse(json['start_date'] as String),
       endDate: DateTime.parse(json['end_date'] as String),
       frequency: json['frequency'] as String,
@@ -86,7 +82,7 @@ class FeedingSchedule {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'device_id': deviceId,
+      'device_key': deviceKey,
       'start_date': startDate.toIso8601String(),
       'end_date': endDate.toIso8601String(),
       'frequency': frequency,
@@ -118,17 +114,38 @@ class DeviceProvider extends ChangeNotifier {
       _isLoading = true;
       notifyListeners();
       
+      debugPrint('Fetching devices...');
       final data = await SupabaseService.fetchDevices();
+      debugPrint('Fetched ${data.length} devices');
+      
+      // Debug print each device
+      for (var device in data) {
+        debugPrint('Device: ${device.toString()}');
+      }
+      
       _devices = data.map((json) => Device.fromJson(json)).toList();
       
-      if (_devices.isNotEmpty && _currentDevice == null) {
-        _currentDevice = _devices.first;
-        await fetchSchedulesForDevice(_currentDevice!.id);
+      // Sort devices by last update time if available
+      _devices.sort((a, b) {
+        if (a.lastFeeding == null && b.lastFeeding == null) return 0;
+        if (a.lastFeeding == null) return 1;
+        if (b.lastFeeding == null) return -1;
+        return b.lastFeeding!.compareTo(a.lastFeeding!);
+      });
+      
+      if (_devices.isNotEmpty) {
+        if (_currentDevice == null || !_devices.contains(_currentDevice)) {
+          _currentDevice = _devices.first;
+          await fetchSchedulesForDevice(_currentDevice!.deviceKey);
+        }
+      } else {
+        debugPrint('No devices found');
       }
       
       _isLoading = false;
       notifyListeners();
     } catch (e) {
+      debugPrint('Error fetching devices: $e');
       _isLoading = false;
       notifyListeners();
       throw Exception('Failed to fetch devices: $e');
@@ -136,10 +153,10 @@ class DeviceProvider extends ChangeNotifier {
   }
   
   // Set current device
-  Future<void> selectDevice(String id) async {
-    final device = _devices.firstWhere((d) => d.id == id);
+  Future<void> selectDevice(String deviceKey) async {
+    final device = _devices.firstWhere((d) => d.deviceKey == deviceKey);
     _currentDevice = device;
-    await fetchSchedulesForDevice(id);
+    await fetchSchedulesForDevice(deviceKey);
     notifyListeners();
   }
   
@@ -155,9 +172,8 @@ class DeviceProvider extends ChangeNotifier {
       }
       
       final device = Device(
-        id: DateTime.now().toString(), // Will be replaced by Supabase UUID
-        name: name,
         deviceKey: deviceKey,
+        name: name,
         userId: user.id,
         foodLevel: 100.0,
         lastFeeding: null,
@@ -176,53 +192,62 @@ class DeviceProvider extends ChangeNotifier {
   
   // Update a device
   Future<void> updateDevice({
-    required String id,
+    required String deviceKey,
     String? name,
-    String? deviceKey,
     double? foodLevel,
     DateTime? lastFeeding,
   }) async {
     try {
-      final deviceToUpdate = _devices.firstWhere((d) => d.id == id);
+      debugPrint('Updating device: $deviceKey');
+      debugPrint('Food level: $foodLevel');
+      debugPrint('Last feeding: $lastFeeding');
+      
+      final deviceToUpdate = _devices.firstWhere((d) => d.deviceKey == deviceKey);
       
       final updatedDevice = Device(
-        id: id,
+        deviceKey: deviceKey,
         name: name ?? deviceToUpdate.name,
-        deviceKey: deviceKey ?? deviceToUpdate.deviceKey,
         userId: deviceToUpdate.userId,
         foodLevel: foodLevel ?? deviceToUpdate.foodLevel,
         lastFeeding: lastFeeding ?? deviceToUpdate.lastFeeding,
       );
       
-      await SupabaseService.updateDevice(id, updatedDevice.toJson());
+      await SupabaseService.updateDevice(deviceKey, updatedDevice.toJson());
       
-      // Refresh device list
-      await fetchDevices();
+      // Update local device list
+      final index = _devices.indexWhere((d) => d.deviceKey == deviceKey);
+      if (index != -1) {
+        _devices[index] = updatedDevice;
+      }
       
       // Update current device if needed
-      if (_currentDevice?.id == id) {
+      if (_currentDevice?.deviceKey == deviceKey) {
         _currentDevice = updatedDevice;
       }
       
       notifyListeners();
+      
+      // Verify the update by refetching
+      await fetchDevices();
     } catch (e) {
+      debugPrint('Error updating device: $e');
       throw Exception('Failed to update device: $e');
     }
   }
   
   // Delete a device
-  Future<void> deleteDevice(String id) async {
+  Future<void> deleteDevice(String deviceKey) async {
     try {
-      await SupabaseService.deleteDevice(id);
+      await SupabaseService.deleteDevice(deviceKey);
       
       // Refresh device list
       await fetchDevices();
       
       // If the deleted device was the current device, select another one
-      if (_currentDevice?.id == id) {
+      if (_currentDevice?.deviceKey == deviceKey) {
         _currentDevice = _devices.isNotEmpty ? _devices.first : null;
         if (_currentDevice != null) {
-          await fetchSchedulesForDevice(_currentDevice!.id);
+          await fetchSchedulesForDevice(_currentDevice!.deviceKey);
         } else {
           _schedules = [];
         }
@@ -235,7 +260,7 @@ class DeviceProvider extends ChangeNotifier {
   }
   
   // Fetch feeding schedules for a specific device
-  Future<void> fetchSchedulesForDevice(String deviceId) async {
+  Future<void> fetchSchedulesForDevice(String deviceKey) async {
     try {
       _isLoading = true;
       notifyListeners();
@@ -243,7 +268,7 @@ class DeviceProvider extends ChangeNotifier {
       final response = await SupabaseService.client
           .from('feeding_schedules')
           .select('*')
-          .eq('device_id', deviceId)
+          .eq('device_key', deviceKey)
           .order('start_date', ascending: true);
       
       _schedules = (response as List).map((json) => FeedingSchedule.fromJson(json)).toList();
@@ -264,10 +289,10 @@ class DeviceProvider extends ChangeNotifier {
         throw Exception('No device selected');
       }
       
-      await SupabaseService.client.from('feeding_schedules').insert(schedule.toJson());
+      await SupabaseService.addFeedingSchedule(schedule.toJson());
       
       // Refresh schedules
-      await fetchSchedulesForDevice(_currentDevice!.id);
+      await fetchSchedulesForDevice(_currentDevice!.deviceKey);
       
       notifyListeners();
     } catch (e) {
@@ -275,14 +300,30 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
 
-  // Remove a feeding schedule
-  Future<void> removeSchedule(String scheduleId) async {
+  // Update a feeding schedule
+  Future<void> updateSchedule(String scheduleId, FeedingSchedule schedule) async {
     try {
-      await SupabaseService.client.from('feeding_schedules').delete().eq('id', scheduleId);
+      await SupabaseService.updateFeedingSchedule(scheduleId, schedule.toJson());
       
       // Refresh schedules
       if (_currentDevice != null) {
-        await fetchSchedulesForDevice(_currentDevice!.id);
+        await fetchSchedulesForDevice(_currentDevice!.deviceKey);
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      throw Exception('Failed to update schedule: $e');
+    }
+  }
+
+  // Remove a feeding schedule
+  Future<void> removeSchedule(String scheduleId) async {
+    try {
+      await SupabaseService.deleteFeedingSchedule(scheduleId);
+      
+      // Refresh schedules
+      if (_currentDevice != null) {
+        await fetchSchedulesForDevice(_currentDevice!.deviceKey);
       }
       
       notifyListeners();
@@ -297,7 +338,7 @@ class DeviceProvider extends ChangeNotifier {
     
     try {
       await updateDevice(
-        id: _currentDevice!.id,
+        deviceKey: _currentDevice!.deviceKey,
         foodLevel: newLevel,
       );
       
@@ -317,7 +358,7 @@ class DeviceProvider extends ChangeNotifier {
     try {
       // Update device with new food level and last feeding time
       await updateDevice(
-        id: _currentDevice!.id,
+        deviceKey: _currentDevice!.deviceKey,
         foodLevel: newFoodLevel,
         lastFeeding: now,
       );
@@ -337,6 +378,7 @@ class DeviceProvider extends ChangeNotifier {
     return foodLevel < 20.0;
   }
 
+  // Get next feeding times
   List<DateTime> getNextFeedingTimes() {
     final now = DateTime.now();
     final nextTimes = <DateTime>[];
@@ -372,5 +414,56 @@ class DeviceProvider extends ChangeNotifier {
 
     nextTimes.sort();
     return nextTimes;
+  }
+
+  // Check if there is a scheduled feeding at the current time
+  bool hasScheduledFeeding() {
+    final now = DateTime.now();
+    final nextTimes = getNextFeedingTimes();
+    
+    if (nextTimes.isEmpty) return false;
+    
+    final nextFeeding = nextTimes.first;
+    final difference = nextFeeding.difference(now).inMinutes.abs();
+    
+    // Allow 1 minute tolerance
+    return difference <= 1;
+  }
+
+  // Get the amount to feed for the current schedule
+  double? getCurrentScheduleAmount() {
+    if (!hasScheduledFeeding()) return null;
+    
+    final now = DateTime.now();
+    
+    for (final schedule in _schedules) {
+      if (schedule.endDate.isBefore(now)) continue;
+      
+      final startDateTime = DateTime(
+        schedule.startDate.year,
+        schedule.startDate.month,
+        schedule.startDate.day,
+        schedule.startTime.hour,
+        schedule.startTime.minute,
+      );
+      
+      if (startDateTime.isAfter(now)) {
+        return schedule.amount;
+      } else {
+        var nextTime = startDateTime;
+        while (nextTime.isBefore(now)) {
+          if (schedule.frequency == 'hour') {
+            nextTime = nextTime.add(const Duration(hours: 1));
+          } else {
+            nextTime = nextTime.add(const Duration(days: 1));
+          }
+        }
+        if (nextTime.isBefore(schedule.endDate)) {
+          return schedule.amount;
+        }
+      }
+    }
+    
+    return null;
   }
 } 

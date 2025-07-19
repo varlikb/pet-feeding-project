@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:pet_feeder/core/services/supabase_service.dart';
-import 'package:pet_feeder/features/feeding/screens/feeding_schedule_test_screen.dart';
+import 'package:pet_feeder/core/services/device_communication_service.dart';
+import 'package:pet_feeder/features/feeding/screens/feeding_schedule_status_screen.dart';
 
 class FeedingSchedule {
   final String id;
@@ -207,24 +208,13 @@ class _FeedingScheduleScreenState extends State<FeedingScheduleScreen> {
         title: const Text('Feeding Schedules'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.science),
-            tooltip: 'Test Scheduler',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const FeedingScheduleTestScreen(),
-                ),
-              );
-            },
-          ),
-          IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh Schedules from Database',
             onPressed: _loadSchedules,
           ),
           IconButton(
             icon: const Icon(Icons.bug_report),
-            tooltip: 'Diagnose Database Issues',
+            tooltip: 'Database Diagnostics',
             onPressed: _diagnoseDatabaseIssues,
           ),
         ],
@@ -260,6 +250,19 @@ class _FeedingScheduleScreenState extends State<FeedingScheduleScreen> {
                         label: const Text('Add Schedule'),
                         onPressed: _addSchedule,
                       ),
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.devices),
+                        label: const Text('Check Device Status'),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => FeedingScheduleStatusScreen(petId: widget.petId),
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 )
@@ -268,12 +271,29 @@ class _FeedingScheduleScreenState extends State<FeedingScheduleScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Automatic Feeding Times',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Automatic Feeding Times',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.device_hub, size: 18),
+                            label: const Text('Device Status'),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => FeedingScheduleStatusScreen(petId: widget.petId),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 16),
                       Expanded(
@@ -363,6 +383,24 @@ class _FeedingScheduleScreenState extends State<FeedingScheduleScreen> {
                                                         // Delete schedule from Supabase
                                                         await SupabaseService.deleteFeedingSchedule(schedule.id);
                                                         
+                                                        // Notify ESP32 to disable the schedule
+                                                        // Get the primary device for this pet
+                                                        final deviceAssignment = await SupabaseService.getPrimaryDeviceForPet(widget.petId);
+                                                        if (deviceAssignment != null) {
+                                                          final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_key']);
+                                                          if (deviceDetails != null) {
+                                                            String? deviceIP = await DeviceCommunicationService.getDeviceIP(deviceDetails['device_key']);
+                                                            if (deviceIP == null) {
+                                                              deviceIP = '192.168.1.9'; // Default IP
+                                                              await DeviceCommunicationService.saveDeviceIP(deviceDetails['device_key'], deviceIP);
+                                                            }
+                                                            
+                                                            // Disable the schedule on ESP32
+                                                            await DeviceCommunicationService.disableSchedule(deviceIP);
+                                                            debugPrint('Schedule disabled on ESP32');
+                                                          }
+                                                        }
+                                                        
                                                         setState(() {
                                                           _schedules.removeAt(index);
                                                           _isLoading = false;
@@ -370,7 +408,10 @@ class _FeedingScheduleScreenState extends State<FeedingScheduleScreen> {
                                                         
                                                         if (context.mounted) {
                                                           ScaffoldMessenger.of(context).showSnackBar(
-                                                            const SnackBar(content: Text('Schedule deleted successfully')),
+                                                            const SnackBar(
+                                                              content: Text('Schedule deleted successfully'),
+                                                              backgroundColor: Colors.green,
+                                                            ),
                                                           );
                                                         }
                                                       } catch (e) {
@@ -381,7 +422,10 @@ class _FeedingScheduleScreenState extends State<FeedingScheduleScreen> {
                                                         
                                                         if (context.mounted) {
                                                           ScaffoldMessenger.of(context).showSnackBar(
-                                                            SnackBar(content: Text('Error deleting schedule: $e')),
+                                                            SnackBar(
+                                                              content: Text('Error deleting schedule: $e'),
+                                                              backgroundColor: Colors.red,
+                                                            ),
                                                           );
                                                         }
                                                       }
@@ -407,6 +451,7 @@ class _FeedingScheduleScreenState extends State<FeedingScheduleScreen> {
                 ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addSchedule,
+        tooltip: 'Add New Schedule',
         child: const Icon(Icons.add),
       ),
     );
@@ -426,16 +471,22 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
   final _formKey = GlobalKey<FormState>();
   final _dateFormat = DateFormat('MMM dd, yyyy');
   
-  // Schedule settings
   TimeOfDay _selectedTime = TimeOfDay.now();
-  double _amount = 50;
+  double _amount = 50.0;
   DateTime _startDate = DateTime.now();
-  DateTime _endDate = DateTime.now().add(const Duration(days: 30));
+  DateTime _endDate = DateTime.now().add(const Duration(days: 7));
   String _frequency = 'day';
   bool _isLoading = false;
   
-  final List<String> _frequencies = ['day', 'hour'];
+  final List<String> _frequencies = ['day', 'hour', 'minute'];
   
+  // Format TimeOfDay to string
+  String _formatTimeOfDay(TimeOfDay time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
   Future<void> _selectTime(BuildContext context) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
@@ -479,71 +530,176 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
     }
   }
 
+  Widget _buildFrequencyDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _frequency,
+      decoration: const InputDecoration(
+        labelText: 'Frequency',
+        border: OutlineInputBorder(),
+      ),
+      items: _frequencies.map((String value) {
+        return DropdownMenuItem<String>(
+          value: value,
+          child: Text(() {
+            if (value == 'day') return 'Daily';
+            if (value == 'hour') return 'Hourly';
+            if (value == 'minute') return 'Every Minute (Test)';
+            return value;
+          }()),
+        );
+      }).toList(),
+      onChanged: (String? newValue) {
+        if (newValue != null) {
+          setState(() {
+            _frequency = newValue;
+          });
+        }
+      },
+    );
+  }
+
+  // Submit the form
+  Future<void> _submitForm() async {
+    if (_formKey.currentState!.validate()) {
+      _formKey.currentState!.save();
+      
+      setState(() {
+        _isLoading = true;
+      });
+      
+      try {
+        // Get the primary device for this pet
+        final deviceAssignment = await SupabaseService.getPrimaryDeviceForPet(widget.petId);
+        if (deviceAssignment == null) {
+          throw Exception('No device assigned to pet');
+        }
+        
+        // Get device details
+        final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_key']);
+        if (deviceDetails == null) {
+          throw Exception('Device not found');
+        }
+
+        // Create schedule object for Supabase
+        final scheduleData = {
+          'pet_id': widget.petId,
+          'device_key': deviceAssignment['device_key'],
+          'start_date': _startDate.toIso8601String(),
+          'end_date': _endDate.toIso8601String(),
+          'frequency': _frequency,
+          'start_time': _frequency == 'minute' 
+              ? FeedingSchedule.timeOfDayToString(TimeOfDay.now())
+              : FeedingSchedule.timeOfDayToString(_selectedTime),
+          'amount': _amount,
+        };
+        
+        // Add to Supabase
+        await SupabaseService.addFeedingSchedule(scheduleData);
+        
+        // Send to device if it's connected
+        String? deviceIP = await DeviceCommunicationService.getDeviceIP(deviceDetails['device_key']);
+        if (deviceIP == null) {
+          deviceIP = '172.20.10.11'; // Default IP
+          await DeviceCommunicationService.saveDeviceIP(deviceDetails['device_key'], deviceIP);
+        }
+        
+        // Ensure the device time is synchronized
+        await DeviceCommunicationService.setDeviceTimezone(deviceIP, timezone: 3); // Türkiye için UTC+3
+        
+        // Send the schedule to ESP32
+        final timeStr = _frequency == 'minute' 
+          ? FeedingSchedule.timeOfDayToString(TimeOfDay.now()) 
+          : FeedingSchedule.timeOfDayToString(_selectedTime);
+        await DeviceCommunicationService.sendScheduleCommand(
+          deviceDetails['device_key'],
+          frequency: _frequency,
+          amount: _amount,
+          startTime: timeStr,
+          startDate: _startDate,
+          endDate: _endDate,
+        );
+        
+        // Show success message and close dialog
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Schedule added successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.of(context).pop(true);
+        }
+      } catch (e) {
+        debugPrint('Error adding schedule: $e');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error adding schedule: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Add Feeding Schedule'),
-      content: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Time picker
-              ListTile(
-                title: const Text('Feeding Time'),
-                subtitle: Text('${_selectedTime.format(context)}'),
-                trailing: const Icon(Icons.access_time),
-                onTap: () => _selectTime(context),
-              ),
-              const SizedBox(height: 8),
-              
-              // Amount slider
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Amount: ${_amount.toInt()} grams'),
-                  Slider(
-                    value: _amount,
-                    min: 10,
-                    max: 200,
-                    divisions: 19,
-                    label: _amount.toInt().toString(),
-                    onChanged: (value) {
-                      setState(() {
-                        _amount = value;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              
-              // Frequency dropdown
-              DropdownButtonFormField<String>(
-                value: _frequency,
+              TextFormField(
                 decoration: const InputDecoration(
-                  labelText: 'Frequency',
+                  labelText: 'Amount (grams)',
                   border: OutlineInputBorder(),
                 ),
-                items: _frequencies.map((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value == 'day' ? 'Daily' : 'Hourly'),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  if (newValue != null) {
-                    setState(() {
-                      _frequency = newValue;
-                    });
+                keyboardType: TextInputType.number,
+                initialValue: _amount.toString(),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter an amount';
+                  }
+                  final amount = double.tryParse(value);
+                  if (amount == null || amount <= 0) {
+                    return 'Please enter a valid amount';
+                  }
+                  return null;
+                },
+                onSaved: (value) {
+                  if (value != null) {
+                    _amount = double.parse(value);
                   }
                 },
               ),
               const SizedBox(height: 16),
               
-              // Date range
+              // Feeding time picker - Hide when frequency is 'minute'
+              if (_frequency != 'minute') ...[
+                ListTile(
+                  title: const Text('Feeding Time'),
+                  subtitle: Text(_formatTimeOfDay(_selectedTime)),
+                  trailing: const Icon(Icons.access_time),
+                  onTap: () => _selectTime(context),
+                ),
+                
+                const SizedBox(height: 16),
+              ],
+              
+              _buildFrequencyDropdown(),
+              
+              const SizedBox(height: 16),
+              
               Row(
                 children: [
                   Expanded(
@@ -574,59 +730,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: _isLoading ? null : () async {
-            if (_formKey.currentState!.validate()) {
-              setState(() {
-                _isLoading = true;
-              });
-              
-              try {
-                // Get the primary device for this pet
-                final deviceAssignment = await SupabaseService.getPrimaryDeviceForPet(widget.petId);
-                if (deviceAssignment == null) {
-                  throw Exception('No device assigned to pet');
-                }
-
-                // Create schedule object for Supabase
-                final scheduleData = {
-                  'pet_id': widget.petId,
-                  'device_id': deviceAssignment['device_id'],
-                  'start_date': _startDate.toIso8601String(),
-                  'end_date': _endDate.toIso8601String(),
-                  'frequency': _frequency,
-                  'start_time': FeedingSchedule.timeOfDayToString(_selectedTime),
-                  'end_time': FeedingSchedule.timeOfDayToString(_selectedTime), // Same as start time for now
-                  'amount': _amount,
-                };
-                
-                // Add to Supabase
-                await SupabaseService.addFeedingSchedule(scheduleData);
-                
-                // Show success message and close dialog
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Schedule added successfully!'),
-                    ),
-                  );
-                  Navigator.of(context).pop(true);
-                }
-              } catch (e) {
-                debugPrint('Error adding schedule: $e');
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error adding schedule: $e')),
-                  );
-                }
-              } finally {
-                if (mounted) {
-                  setState(() {
-                    _isLoading = false;
-                  });
-                }
-              }
-            }
-          },
+          onPressed: _isLoading ? null : _submitForm,
           child: _isLoading 
             ? const SizedBox(
                 width: 20,
@@ -665,7 +769,7 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
   late String _frequency;
   bool _isLoading = false;
   
-  final List<String> _frequencies = ['day', 'hour'];  // Updated frequency options
+  final List<String> _frequencies = ['day', 'hour', 'minute'];
   
   @override
   void initState() {
@@ -679,6 +783,35 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
     _frequency = widget.schedule.frequency == 'daily' || widget.schedule.frequency == 'twice-daily' || widget.schedule.frequency == 'custom' 
         ? 'day' 
         : widget.schedule.frequency;
+  }
+  
+  // Add _buildFrequencyDropdown method
+  Widget _buildFrequencyDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _frequency,
+      decoration: const InputDecoration(
+        labelText: 'Frequency',
+        border: OutlineInputBorder(),
+      ),
+      items: _frequencies.map((String value) {
+        return DropdownMenuItem<String>(
+          value: value,
+          child: Text(() {
+            if (value == 'day') return 'Daily';
+            if (value == 'hour') return 'Hourly';
+            if (value == 'minute') return 'Every Minute (Test)';
+            return value;
+          }()),
+        );
+      }).toList(),
+      onChanged: (String? newValue) {
+        if (newValue != null) {
+          setState(() {
+            _frequency = newValue;
+          });
+        }
+      },
+    );
   }
   
   Future<void> _selectTime(BuildContext context) async {
@@ -724,6 +857,87 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
     }
   }
 
+  // Submit the form
+  Future<void> _submitForm() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() {
+        _isLoading = true;
+      });
+      
+      try {
+        // Get the primary device for this pet
+        final deviceAssignment = await SupabaseService.getPrimaryDeviceForPet(widget.petId);
+        if (deviceAssignment == null) {
+          throw Exception('No device assigned to pet');
+        }
+        
+        // Get device details
+        final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_key']);
+        if (deviceDetails == null) {
+          throw Exception('Device not found');
+        }
+
+        // Create schedule object for Supabase
+        final scheduleData = {
+          'pet_id': widget.petId,
+          'device_key': deviceAssignment['device_key'],
+          'start_date': _startDate.toIso8601String(),
+          'end_date': _endDate.toIso8601String(),
+          'frequency': _frequency,
+          'start_time': _frequency == 'minute' 
+              ? FeedingSchedule.timeOfDayToString(TimeOfDay.now())
+              : FeedingSchedule.timeOfDayToString(_selectedTime),
+          'amount': _amount,
+        };
+        
+        // Update in Supabase
+        await SupabaseService.updateFeedingSchedule(widget.schedule.id, scheduleData);
+        
+        // Send to device if it's connected
+        String? deviceIP = await DeviceCommunicationService.getDeviceIP(deviceDetails['device_key']);
+        if (deviceIP == null) {
+          deviceIP = '172.20.10.11'; // Default IP
+          await DeviceCommunicationService.saveDeviceIP(deviceDetails['device_key'], deviceIP);
+        }
+        
+        // First disable any existing schedule
+        await DeviceCommunicationService.disableSchedule(deviceIP);
+        
+        // Ensure the device time is synchronized
+        await DeviceCommunicationService.setDeviceTimezone(deviceIP, timezone: 3); // Türkiye için UTC+3
+        
+        // Send the updated schedule to ESP32
+        final timeStr = _frequency == 'minute' 
+          ? FeedingSchedule.timeOfDayToString(TimeOfDay.now()) 
+          : FeedingSchedule.timeOfDayToString(_selectedTime);
+        await DeviceCommunicationService.sendScheduleCommand(
+          deviceDetails['device_key'],
+          frequency: _frequency,
+          amount: _amount,
+          startTime: timeStr,
+          startDate: _startDate,
+          endDate: _endDate,
+        );
+        
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -735,14 +949,16 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Time picker
-              ListTile(
-                title: const Text('Feeding Time'),
-                subtitle: Text('${_selectedTime.format(context)}'),
-                trailing: const Icon(Icons.access_time),
-                onTap: () => _selectTime(context),
-              ),
-              const SizedBox(height: 8),
+              // Time picker - Hide when frequency is 'minute'
+              if (_frequency != 'minute') ...[
+                ListTile(
+                  title: const Text('Feeding Time'),
+                  subtitle: Text('${_selectedTime.format(context)}'),
+                  trailing: const Icon(Icons.access_time),
+                  onTap: () => _selectTime(context),
+                ),
+                const SizedBox(height: 8),
+              ],
               
               // Amount slider
               Column(
@@ -766,26 +982,7 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
               const SizedBox(height: 16),
               
               // Frequency dropdown
-              DropdownButtonFormField<String>(
-                value: _frequency,
-                decoration: const InputDecoration(
-                  labelText: 'Frequency',
-                  border: OutlineInputBorder(),
-                ),
-                items: _frequencies.map((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value == 'day' ? 'Daily' : 'Hourly'),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  if (newValue != null) {
-                    setState(() {
-                      _frequency = newValue;
-                    });
-                  }
-                },
-              ),
+              _buildFrequencyDropdown(),
               const SizedBox(height: 16),
               
               // Date range
@@ -819,59 +1016,7 @@ class _EditScheduleDialogState extends State<EditScheduleDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: _isLoading ? null : () async {
-            if (_formKey.currentState!.validate()) {
-              setState(() {
-                _isLoading = true;
-              });
-              
-              try {
-                // Get the primary device for this pet
-                final deviceAssignment = await SupabaseService.getPrimaryDeviceForPet(widget.petId);
-                if (deviceAssignment == null) {
-                  throw Exception('No device assigned to pet');
-                }
-
-                // Create schedule object for Supabase
-                final scheduleData = {
-                  'pet_id': widget.petId,
-                  'device_id': deviceAssignment['device_id'],
-                  'start_date': _startDate.toIso8601String(),
-                  'end_date': _endDate.toIso8601String(),
-                  'frequency': _frequency,
-                  'start_time': FeedingSchedule.timeOfDayToString(_selectedTime),
-                  'end_time': FeedingSchedule.timeOfDayToString(_selectedTime), // Same as start time for now
-                  'amount': _amount,
-                };
-                
-                // Update in Supabase
-                await SupabaseService.updateFeedingSchedule(widget.schedule.id, scheduleData);
-                
-                // Show success message and close dialog
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Schedule updated successfully!'),
-                    ),
-                  );
-                  Navigator.of(context).pop(true);
-                }
-              } catch (e) {
-                debugPrint('Error updating schedule: $e');
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error updating schedule: $e')),
-                  );
-                }
-              } finally {
-                if (mounted) {
-                  setState(() {
-                    _isLoading = false;
-                  });
-                }
-              }
-            }
-          },
+          onPressed: _isLoading ? null : _submitForm,
           child: _isLoading 
             ? const SizedBox(
                 width: 20,

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Supabase Realtime Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Supabase Realtime Test</h1>
+    <div id="status">Status: Connecting...</div>
+    <div id="messages"></div>
+
+    <script>
+        const SUPABASE_URL = 'https://gsrjfkviwjukfnzyvnws.supabase.co'
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdzcmpma3Zpd2p1a2Zuenl2bndzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY4Mzg3NjgsImV4cCI6MjA2MjQxNDc2OH0.noGHh9rvtBp0HcCh9hpxcwFDgjCQGP7IAjdu-Vnfzxg'
+
+        // Supabase istemcisini oluştur
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+
+        // Mesajları ekrana yazdıran fonksiyon
+        function addMessage(message) {
+            const messagesDiv = document.getElementById('messages')
+            const messageElement = document.createElement('div')
+            messageElement.textContent = JSON.stringify(message, null, 2)
+            messagesDiv.insertBefore(messageElement, messagesDiv.firstChild)
+        }
+
+        // Device Channel subscription'ı başlat
+        const deviceChannel = supabase
+            .channel('realtime:public:device_channel')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'device_channel'
+            }, (payload) => {
+                console.log('Device Channel change received:', payload)
+                addMessage({
+                    type: 'device_channel',
+                    data: payload
+                })
+            })
+            .subscribe((status) => {
+                console.log('Device Channel status:', status)
+                document.getElementById('status').textContent = `Device Channel Status: ${status}`
+            })
+
+        // Devices tablosunu dinle
+        const devicesChannel = supabase
+            .channel('realtime:public:devices')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'devices'
+            }, (payload) => {
+                console.log('Devices table change received:', payload)
+                addMessage({
+                    type: 'devices',
+                    data: payload
+                })
+            })
+            .subscribe((status) => {
+                console.log('Devices Channel status:', status)
+            })
+
+        // Hata yakalama
+        window.onerror = function(message, source, lineno, colno, error) {
+            addMessage({
+                type: 'error',
+                message: message,
+                source: source,
+                line: lineno,
+                column: colno
+            })
+        }
+    </script>
+
+    <style>
+        #messages {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            height: 400px;
+            overflow-y: auto;
+        }
+        #messages div {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        #status {
+            padding: 10px;
+            margin: 10px 0;
+            background-color: #f0f0f0;
+        }
+    </style>
+</body>
+</html> 

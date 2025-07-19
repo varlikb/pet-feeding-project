@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pet_feeder/core/services/supabase_service.dart';
+import 'package:pet_feeder/core/services/device_communication_service.dart';
 
 class FeedingSchedulerService {
   static final FeedingSchedulerService _instance = FeedingSchedulerService._internal();
@@ -53,7 +54,6 @@ class FeedingSchedulerService {
       debugPrint('Current time: $currentTimeStr');
       
       // Get all active schedules for the current time
-      // Join with pets first, then to pet_device_assignments
       final schedules = await SupabaseService.client
           .from('feeding_schedules')
           .select('''
@@ -61,45 +61,19 @@ class FeedingSchedulerService {
             pets:pet_id (
               id,
               user_id,
-              pet_device_assignments!inner (
-                device_id,
-                is_primary
-              )
+              device_key
             )
           ''')
           .lte('start_date', now)
           .gte('end_date', now)
-          .eq('start_time', currentTimeStr)
-          .eq('pets.pet_device_assignments.is_primary', true);
+          .eq('start_time', currentTimeStr);
 
       debugPrint('Found ${schedules.length} schedules for current time');
 
+      // Execute each schedule
       for (final schedule in schedules) {
-        try {
-          final frequency = schedule['frequency'] as String;
-          final lastCheck = _lastCheck ?? now.subtract(const Duration(minutes: 1));
-          
-          debugPrint('Processing schedule ${schedule['id']} with frequency $frequency');
-          
-          // For hourly schedules, check if we've crossed an hour boundary
-          if (frequency == 'hour' && 
-              lastCheck.hour != now.hour) {
-            await _executeScheduledFeeding(schedule);
-          }
-          // For daily schedules, always execute at the scheduled time
-          else if (frequency == 'day') {
-            await _executeScheduledFeeding(schedule);
-          }
-          // For twice-daily schedules, check both morning and evening times
-          else if (frequency == 'twice-daily') {
-            await _executeScheduledFeeding(schedule);
-          }
-        } catch (e) {
-          debugPrint('Error executing scheduled feeding: $e');
-        }
+        await _executeScheduledFeeding(schedule);
       }
-      
-      _lastCheck = now;
     } catch (e) {
       debugPrint('Error checking scheduled feedings: $e');
     }
@@ -109,14 +83,18 @@ class FeedingSchedulerService {
     try {
       debugPrint('Executing scheduled feeding for schedule ${schedule['id']}');
       
-      // Get device ID from the nested pet_device_assignments
-      final deviceId = schedule['pets']['pet_device_assignments'][0]['device_id'];
-      final deviceDetails = await SupabaseService.getDevice(deviceId);
+      // Get device key from the pet
+      final deviceKey = schedule['pets']['device_key'];
+      if (deviceKey == null) {
+        throw Exception('No device assigned to pet');
+      }
+
+      final deviceDetails = await SupabaseService.getDevice(deviceKey);
       if (deviceDetails == null) {
         throw Exception('Device not found');
       }
 
-      // Check if there's enough food and calculate new level
+      // Check if there's enough food
       final amount = (schedule['amount'] as num).toDouble();
       final currentFoodLevel = (deviceDetails['food_level'] as num).toDouble();
       
@@ -126,21 +104,12 @@ class FeedingSchedulerService {
         throw Exception('Not enough food in device. Available: ${currentFoodLevel.toStringAsFixed(1)}g');
       }
 
-      final newFoodLevel = currentFoodLevel - amount;
-
-      // Update device food level
-      await SupabaseService.updateDevice(deviceId, {'food_level': newFoodLevel});
-      debugPrint('Updated device food level to: $newFoodLevel');
-
-      // Create the feeding record
-      await SupabaseService.client.from('feeding_records').insert({
-        'pet_id': schedule['pet_id'],
-        'device_id': deviceId,
-        'amount': amount,
-        'feeding_time': DateTime.now().toIso8601String(),
-        'feeding_type': 'scheduled',
-        'user_id': schedule['pets']['user_id'],
-      });
+      // Send feed command to device - ESP32 will handle database updates
+      final result = await DeviceCommunicationService.feedNow(deviceKey, amount);
+      
+      if (!result['success']) {
+        throw Exception(result['message'] ?? 'Failed to execute scheduled feeding');
+      }
       
       debugPrint('Successfully executed scheduled feeding for schedule ${schedule['id']}');
     } catch (e) {

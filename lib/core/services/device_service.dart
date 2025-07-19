@@ -12,18 +12,18 @@ class DeviceService {
       }
 
       // Check if the device exists and is available
-      final devices = await SupabaseService.client
+      final device = await SupabaseService.client
           .from('devices')
           .select()
           .eq('device_key', deviceKey)
           .eq('is_paired', false)
-          .filter('owner_id', 'is', null);
+          .maybeSingle();
       
-      if (devices.isEmpty) {
+      if (device == null) {
         throw Exception('Device not found or not available for pairing.');
       }
       
-      return devices[0];
+      return device;
     } catch (e) {
       debugPrint('Error checking device availability: $e');
       if (e is Exception) {
@@ -41,26 +41,17 @@ class DeviceService {
         throw Exception('User not authenticated');
       }
 
-      // Check device availability first
-      final device = await checkDeviceAvailability(deviceKey);
-      if (device == null) {
-        throw Exception('Device not found or not available for pairing');
-      }
-
-      // Pair the device
+      // Call the verify_device RPC function
       final response = await SupabaseService.client
-          .from('devices')
-          .update({
-            'owner_id': userId,
-            'is_paired': true,
-            'last_paired_at': DateTime.now().toIso8601String(),
-          })
-          .eq('device_key', deviceKey)
-          .eq('is_paired', false) // Extra check to prevent race conditions
+          .rpc('verify_device', params: {'p_device_key': deviceKey})
           .select()
           .single();
 
-      return response;
+      if (response['success'] == false) {
+        throw Exception(response['message']);
+      }
+
+      return response['device_info'];
     } catch (e) {
       debugPrint('Error pairing device: $e');
       rethrow;
@@ -68,22 +59,32 @@ class DeviceService {
   }
 
   // Unpair a device
-  static Future<void> unpairDevice(String deviceId) async {
+  static Future<void> unpairDevice(String deviceKey) async {
     try {
       final userId = SupabaseService.getCurrentUser()?.id;
       if (userId == null) {
         throw Exception('User not authenticated');
       }
 
+      // First check if any pets are using this device
+      final petsUsingDevice = await SupabaseService.client
+          .from('pets')
+          .select('id, name')
+          .eq('device_key', deviceKey)
+          .eq('user_id', userId);
+          
+      if (petsUsingDevice.isNotEmpty) {
+        final petNames = (petsUsingDevice as List).map((p) => p['name']).join(', ');
+        throw Exception('Cannot unpair device. It is being used by: $petNames');
+      }
+
       await SupabaseService.client
           .from('devices')
           .update({
-            'owner_id': null,
             'is_paired': false,
-            'last_paired_at': null,
+            'updated_at': DateTime.now().toIso8601String(),
           })
-          .eq('id', deviceId)
-          .eq('owner_id', userId); // Ensure user owns the device
+          .eq('device_key', deviceKey);
     } catch (e) {
       debugPrint('Error unpairing device: $e');
       rethrow;
@@ -93,65 +94,40 @@ class DeviceService {
   // Get user's paired devices
   static Future<List<Map<String, dynamic>>> getUserDevices() async {
     try {
-      final userId = SupabaseService.getCurrentUser()?.id;
-      if (userId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      final response = await SupabaseService.client
-          .from('devices')
-          .select()
-          .eq('owner_id', userId)
-          .eq('is_paired', true);
-
-      return List<Map<String, dynamic>>.from(response);
+      return await SupabaseService.getUserDevices();
     } catch (e) {
       debugPrint('Error getting user devices: $e');
       return [];
     }
   }
 
-  // Get a specific device by ID
-  static Future<Map<String, dynamic>?> getDeviceById(String deviceId) async {
+  // Get available devices for pairing
+  static Future<List<Map<String, dynamic>>> getAvailableDevices() async {
     try {
-      final userId = SupabaseService.getCurrentUser()?.id;
-      if (userId == null) {
-        throw Exception('User not authenticated');
-      }
+      return await SupabaseService.getAvailableDevices();
+    } catch (e) {
+      debugPrint('Error getting available devices: $e');
+      return [];
+    }
+  }
 
+  // Get a specific device by key
+  static Future<Map<String, dynamic>> getDeviceByKey(String deviceKey) async {
+    try {
       final response = await SupabaseService.client
           .from('devices')
           .select()
-          .eq('id', deviceId)
-          .eq('owner_id', userId)
+          .eq('device_key', deviceKey)
           .single();
-
       return response;
     } catch (e) {
-      debugPrint('Error getting device: $e');
-      return null;
+      throw Exception('Error getting device: $e');
     }
   }
 
   // Admin: Add new device to the system
   static Future<Map<String, dynamic>> addDevice(Map<String, dynamic> deviceData) async {
     try {
-      final userId = SupabaseService.getCurrentUser()?.id;
-      if (userId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      // Check if user is admin
-      final isAdmin = await SupabaseService.client
-          .from('admin_users')
-          .select()
-          .eq('user_id', userId)
-          .single();
-
-      if (isAdmin == null) {
-        throw Exception('Only administrators can add devices');
-      }
-
       // Validate required fields
       if (deviceData['name'] == null || deviceData['name'].toString().trim().isEmpty) {
         throw Exception('Device name is required');
@@ -164,6 +140,8 @@ class DeviceService {
       final newDevice = {
         'name': deviceData['name'],
         'device_key': deviceData['device_key'],
+        'food_level': deviceData['food_level'] ?? 1000, // Default to 1000g
+        'is_paired': false,
       };
 
       final response = await SupabaseService.client
@@ -187,7 +165,14 @@ class DeviceService {
     try {
       final response = await SupabaseService.client
           .from('devices')
-          .select('*')
+          .select('''
+            *,
+            pets (
+              id,
+              name,
+              user_id
+            )
+          ''')
           .order('created_at', ascending: false);
 
       return List<Map<String, dynamic>>.from(response);

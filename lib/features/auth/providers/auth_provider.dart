@@ -94,7 +94,7 @@ class AuthProvider extends ChangeNotifier {
       final response = await SupabaseService.signUp(
         email: email,
         password: password,
-        data: {'name': name},
+        userMetadata: {'name': name},
       );
       
       return {'success': true};
