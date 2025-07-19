@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pet_provider.dart';
+import '../../../core/services/device_communication_service.dart';
 import 'edit_pet_screen.dart';
 import '../../feeding/screens/feeding_schedule_screen.dart';
 import '../../feeding/screens/feeding_history_screen.dart';
+import 'dart:async';
 
 class PetDetailScreen extends StatefulWidget {
   const PetDetailScreen({Key? key}) : super(key: key);
@@ -14,24 +16,38 @@ class PetDetailScreen extends StatefulWidget {
 
 class _PetDetailScreenState extends State<PetDetailScreen> {
   bool _isLoading = false;
+  bool _isFeeding = false;
   double _feedAmount = 50.0; // Default feed amount in grams
-  double _foodLevel = 100.0; // Default food level percentage
+  double? _foodLevel; // Food level percentage (0-100%) - will be loaded from database
   bool _isFemale = true; // Default gender
   String _deviceKey = ''; // Add this line
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _loadFoodLevel();
-    _loadDeviceKey(); // Add this line
+    _loadDeviceKey();
+    // Start periodic refresh of food level
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _loadFoodLevel();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadFoodLevel() async {
     final petProvider = Provider.of<PetProvider>(context, listen: false);
     final foodLevel = await petProvider.getCurrentDeviceFoodLevel();
-    setState(() {
-      _foodLevel = foodLevel;
-    });
+    if (mounted) {
+      setState(() {
+        _foodLevel = foodLevel;
+      });
+    }
   }
 
   Future<void> _loadDeviceKey() async {
@@ -192,7 +208,9 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Food Available: ${_foodLevel.toStringAsFixed(1)}g',
+                                      _foodLevel != null 
+                                        ? 'Food Level: ${_foodLevel!.toStringAsFixed(1)}%'
+                                        : 'Food Level: Loading...',
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -202,16 +220,21 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
                                     LayoutBuilder(
                                       builder: (context, constraints) => SizedBox(
                                         width: constraints.maxWidth,
-                                        child: LinearProgressIndicator(
-                                          value: (_foodLevel / 1000.0).clamp(0.0, 1.0),
-                                          backgroundColor: Colors.grey[200],
-                                          valueColor: AlwaysStoppedAnimation<Color>(
-                                            _foodLevel > 200 ? Colors.green : Colors.red,
-                                          ),
-                                        ),
+                                        child: _foodLevel != null
+                                          ? LinearProgressIndicator(
+                                              value: (_foodLevel! / 100.0).clamp(0.0, 1.0),
+                                              backgroundColor: Colors.grey[200],
+                                              valueColor: AlwaysStoppedAnimation<Color>(
+                                                _foodLevel! > 20 ? Colors.green : Colors.red,
+                                              ),
+                                            )
+                                          : LinearProgressIndicator(
+                                              backgroundColor: Colors.grey[200],
+                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.grey[400]!),
+                                            ),
                                       ),
                                     ),
-                                    if (_foodLevel <= 200)
+                                    if (_foodLevel != null && _foodLevel! <= 20)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 4),
                                         child: Text(
@@ -336,26 +359,60 @@ class _PetDetailScreenState extends State<PetDetailScreen> {
   Future<void> _feedPet(PetProvider petProvider) async {
     setState(() {
       _isLoading = true;
+      _isFeeding = true;
     });
     
     try {
-      await petProvider.feedPet(_feedAmount);
-      // Reload food level after feeding
-      await _loadFoodLevel();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Fed ${_feedAmount.toInt()} grams successfully')),
-        );
+      // Get device key
+      final deviceKey = await petProvider.getDeviceKey();
+      if (deviceKey == null) {
+        throw Exception('Device key not found');
+      }
+      
+      // Send feed command to ESP32 device
+      final result = await DeviceCommunicationService.feedNow(
+        deviceKey,
+        _feedAmount,
+      );
+      
+      if (result['success']) {
+        // Load new food level
+        await _loadFoodLevel();
+        
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Successfully fed ${_feedAmount.toInt()} grams')),
+          );
+        }
+      } else {
+        String errorMsg = 'Failed to send feed command';
+        
+        // More detailed message based on error type
+        if (result['error'] == 'TIMEOUT') {
+          errorMsg = 'Connection timeout. Device might be offline.';
+        } else if (result['error'] == 'CONNECTION_FAILED') {
+          errorMsg = 'Cannot connect to device. Check if it\'s powered on.';
+        } else if (result['error'] == 'INSUFFICIENT_FOOD') {
+          errorMsg = 'Not enough food. Please refill the container.';
+        } else if (result.containsKey('message')) {
+          errorMsg = result['message'];
+        }
+        
+        throw Exception(errorMsg);
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error feeding pet: $e')),
+          SnackBar(
+            content: Text('Error feeding pet: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
       setState(() {
         _isLoading = false;
+        _isFeeding = false;
       });
     }
   }

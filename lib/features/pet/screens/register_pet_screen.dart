@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pet_provider.dart';
 import '../../../core/services/device_service.dart';
+import '../../../core/services/supabase_service.dart';
 
 class RegisterPetScreen extends StatefulWidget {
   const RegisterPetScreen({super.key});
@@ -18,7 +19,7 @@ class _RegisterPetScreenState extends State<RegisterPetScreen> {
   bool _isFemale = false;
   bool _isLoading = false;
   List<Map<String, dynamic>> _userDevices = [];
-  String? _selectedDeviceId;
+  String? _selectedDeviceKey;
 
   @override
   void initState() {
@@ -46,6 +47,8 @@ class _RegisterPetScreenState extends State<RegisterPetScreen> {
         _userDevices = devices;
         _isLoading = false;
       });
+
+      // Test cihazı oluşturma kısmını kaldırdık
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -61,63 +64,45 @@ class _RegisterPetScreenState extends State<RegisterPetScreen> {
     }
   }
 
-  Future<void> _handleRegister() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+  Future<void> _registerPet() async {
+    if (_formKey.currentState!.validate()) {
+      try {
+        setState(() {
+          _isLoading = true;
+        });
 
-    if (_selectedDeviceId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a device'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
+        if (_selectedDeviceKey == null) {
+          throw Exception('Please select a device');
+        }
 
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      // Get the selected device
-      final selectedDevice = _userDevices.firstWhere(
-        (device) => device['id'] == _selectedDeviceId,
-      );
-
-      await context.read<PetProvider>().registerPet(
-        name: _nameController.text,
-        weight: double.parse(_weightController.text),
-        age: int.parse(_ageController.text),
-        isFemale: _isFemale,
-        deviceId: selectedDevice['id'],
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Pet registered successfully!'),
-            backgroundColor: Colors.green,
-          ),
+        await context.read<PetProvider>().registerPet(
+          name: _nameController.text,
+          weight: double.parse(_weightController.text),
+          age: int.parse(_ageController.text),
+          isFemale: _isFemale,
+          deviceKey: _selectedDeviceKey!,
         );
-        Navigator.of(context).pop();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Pet registered successfully')),
+          );
+          Navigator.of(context).pop();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error registering pet: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().contains('Exception: ') 
-                ? e.toString().split('Exception: ')[1]
-                : e.toString()),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
     }
   }
 
@@ -250,16 +235,16 @@ class _RegisterPetScreenState extends State<RegisterPetScreen> {
                         labelText: 'Select Device',
                         border: OutlineInputBorder(),
                       ),
-                      value: _selectedDeviceId,
+                      value: _selectedDeviceKey,
                       items: _userDevices.map((device) {
                         return DropdownMenuItem<String>(
-                          value: device['id'],
+                          value: device['device_key'],
                           child: Text(device['name']),
                         );
                       }).toList(),
                       onChanged: (value) {
                         setState(() {
-                          _selectedDeviceId = value;
+                          _selectedDeviceKey = value;
                         });
                       },
                       validator: (value) {
@@ -285,7 +270,7 @@ class _RegisterPetScreenState extends State<RegisterPetScreen> {
                 ),
               const SizedBox(height: 32),
               ElevatedButton(
-                onPressed: _isLoading ? null : _handleRegister,
+                onPressed: _isLoading ? null : _registerPet,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),

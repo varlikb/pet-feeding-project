@@ -10,7 +10,7 @@ class Pet {
   final double weight;
   final int age;
   final bool isFemale;
-  final String deviceId;
+  final String deviceKey;
   final String userId;
   
   Pet({
@@ -19,7 +19,7 @@ class Pet {
     required this.weight,
     required this.age,
     required this.isFemale,
-    required this.deviceId,
+    required this.deviceKey,
     required this.userId,
   });
   
@@ -30,7 +30,7 @@ class Pet {
       weight: (json['weight'] as num).toDouble(),
       age: json['age'] as int,
       isFemale: json['is_female'] as bool,
-      deviceId: json['device_id'] as String,
+      deviceKey: json['device_key'] as String,
       userId: json['user_id'] as String,
     );
   }
@@ -42,7 +42,7 @@ class Pet {
       'weight': weight,
       'age': age,
       'is_female': isFemale,
-      'device_id': deviceId,
+      'device_key': deviceKey,
       'user_id': userId,
     };
   }
@@ -89,54 +89,29 @@ class PetProvider extends ChangeNotifier {
     required double weight,
     required int age,
     required bool isFemale,
-    required String deviceId,
+    required String deviceKey,
   }) async {
     try {
-      final user = SupabaseService.getCurrentUser();
-      if (user == null) {
-        throw Exception('User not authenticated');
-      }
-
-      // Get the device to verify it exists and is paired with the user
-      final device = await DeviceService.getDeviceById(deviceId);
+      final device = await DeviceService.getDeviceByKey(deviceKey);
       if (device == null) {
         throw Exception('Device not found');
       }
-      if (device['owner_id'] != user.id) {
-        throw Exception('Device does not belong to you');
-      }
-      if (!device['is_paired']) {
-        throw Exception('Device is not paired');
-      }
-      
-      // Register the pet
-      final pet = {
+
+      final response = await SupabaseService.client.from('pets').insert({
         'name': name,
         'weight': weight,
         'age': age,
         'is_female': isFemale,
-        'device_id': deviceId,
-        'user_id': user.id,
-      };
-      
-      final addedPet = await SupabaseService.addPet(pet);
-      
-      // Create pet-device assignment
-      await SupabaseService.assignPetToDevice(
-        addedPet['id'],
-        deviceId,
-        true, // Set as primary device
-      );
-      
-      // Refresh the pet list
-      await fetchPets();
-      
-      // Set as current pet
-      _currentPet = _pets.isNotEmpty ? _pets.first : null;
-      
-      notifyListeners();
+        'device_key': deviceKey,
+        'user_id': SupabaseService.client.auth.currentUser!.id,
+      }).select();
+
+      if (response.isNotEmpty) {
+        _pets.add(Pet.fromJson(response[0]));
+        notifyListeners();
+      }
     } catch (e) {
-      throw Exception('Failed to register pet: $e');
+      throw Exception('Error registering pet: $e');
     }
   }
   
@@ -146,34 +121,31 @@ class PetProvider extends ChangeNotifier {
     required double weight,
     required int age,
     required bool isFemale,
-    String? deviceId,
+    String? deviceKey,
   }) async {
     try {
-      if (_currentPet == null) {
-        throw Exception('No pet selected');
+      final response = await SupabaseService.client
+          .from('pets')
+          .update({
+            'name': name,
+            'weight': weight,
+            'age': age,
+            'is_female': isFemale,
+            'device_key': deviceKey,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', id)
+          .select()
+          .single();
+
+      final updatedPet = Pet.fromJson(response);
+      final index = _pets.indexWhere((pet) => pet.id == id);
+      if (index != -1) {
+        _pets[index] = updatedPet;
+        notifyListeners();
       }
-      
-      final updatedPet = Pet(
-        id: id,
-        name: name,
-        weight: weight,
-        age: age,
-        isFemale: isFemale,
-        deviceId: deviceId ?? _currentPet!.deviceId,
-        userId: _currentPet!.userId,
-      );
-      
-      await SupabaseService.updatePet(id, updatedPet.toJson());
-      
-      // Refresh pet list
-      await fetchPets();
-      
-      // Update current pet
-      _currentPet = updatedPet;
-      
-      notifyListeners();
     } catch (e) {
-      throw Exception('Failed to update pet: $e');
+      throw Exception('Error updating pet: $e');
     }
   }
   
@@ -208,7 +180,7 @@ class PetProvider extends ChangeNotifier {
       }
 
       // Get current device details
-      final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_id']);
+      final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_key']);
       if (deviceDetails == null) {
         throw Exception('Device not found');
       }
@@ -224,13 +196,13 @@ class PetProvider extends ChangeNotifier {
 
       // Update device food level
       await SupabaseService.updateDevice(
-        deviceAssignment['device_id'],
+        deviceAssignment['device_key'],
         {'food_level': newFoodLevel},
       );
       
       final record = {
         'pet_id': _currentPet!.id,
-        'device_id': deviceAssignment['device_id'],
+        'device_key': deviceAssignment['device_key'],
         'amount': amount,
         'feeding_time': DateTime.now().toIso8601String(),
         'feeding_type': 'manual', // Can be 'manual' or 'scheduled'
@@ -270,7 +242,7 @@ class PetProvider extends ChangeNotifier {
         return 0.0;
       }
 
-      final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_id']);
+      final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_key']);
       if (deviceDetails == null) {
         return 0.0;
       }
@@ -293,7 +265,7 @@ class PetProvider extends ChangeNotifier {
         return null;
       }
 
-      final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_id']);
+      final deviceDetails = await SupabaseService.getDevice(deviceAssignment['device_key']);
       if (deviceDetails == null) {
         return null;
       }
